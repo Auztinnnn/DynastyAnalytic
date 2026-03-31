@@ -4991,7 +4991,11 @@ async function loadPlayoffData() {
     try {
       const bracket = await fetch(`${BASE}/league/${lgId}/winners_bracket`, { signal: AbortSignal.timeout(8000) })
         .then(r => r.ok ? r.json() : []).catch(() => []);
-      const maxRound = (bracket && bracket.length) ? Math.max(...bracket.map(b => b.r || 0)) : 0;
+      // Only count rounds that have a completed match (w set) — Sleeper pre-populates
+      // placeholder entries for future rounds with w:null, which would inflate maxRound
+      // and make the championship lookup fail.
+      const completedBracket = (bracket || []).filter(b => b.w);
+      const maxRound = completedBracket.length ? Math.max(...completedBracket.map(b => b.r || 0)) : 0;
       // Fetch matchup data for each playoff round week
       const matchupsByWeek = {};
       for (let rnd = 1; rnd <= Math.max(maxRound, 3); rnd++) {
