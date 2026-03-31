@@ -1345,7 +1345,7 @@ function renderScheduleMatrix(league) {
 
   let html = `<div class="section">
     <div class="section-title">Schedule Swap Matrix
-      <span class="section-note">Row = team's actual scores &nbsp;·&nbsp; Column = schedule applied &nbsp;·&nbsp; <span style="color:var(--yellow)">■</span> = actual record &nbsp;·&nbsp; W+L = weeks played &nbsp;·&nbsp; head-to-head week uses league avg as substitute</span>
+      <span class="section-note">Row = team's actual scores &nbsp;·&nbsp; Column = schedule applied &nbsp;·&nbsp; <span style="color:var(--yellow)">■</span> = actual record &nbsp;·&nbsp; W+L = weeks played &nbsp;·&nbsp; head-to-head week uses league avg as substitute &nbsp;·&nbsp; <span style="color:var(--green)">▲ Best</span> = opponent you'd most want to face that week &nbsp;·&nbsp; <span style="color:var(--red)">▼ Worst</span> = toughest opponent</span>
     </div>
     <div class="table-wrap">
       <table style="font-size:.75rem">
@@ -1373,6 +1373,7 @@ function renderScheduleMatrix(league) {
 
     html += `<tr><td class="bold" style="font-size:.8rem;position:sticky;left:0;background:var(--surface);z-index:1">${rowTeam.teamName}</td>`;
 
+    let bestShown = false, worstShown = false;
     sorted.forEach(colTeam => {
       const c = matrix[rowTeam.rosterId][colTeam.rosterId];
       const isActual = rowTeam.rosterId === colTeam.rosterId;
@@ -1393,8 +1394,10 @@ function renderScheduleMatrix(league) {
       const textStyle   = isActual
         ? 'color:var(--yellow);font-weight:700'
         : winPct>.5 ? 'color:var(--green)' : winPct<.5 ? 'color:var(--red)' : 'color:var(--muted)';
-      const isBest  = !isActual && c.wins === bestW;
-      const isWorst = !isActual && c.wins === worstW;
+      const isBest  = !isActual && !bestShown  && c.wins === bestW;
+      const isWorst = !isActual && !worstShown && c.wins === worstW;
+      if (isBest)  bestShown  = true;
+      if (isWorst) worstShown = true;
 
       html += `<td style="text-align:center;padding:7px 4px;${bgStyle};${borderStyle}">
         <span style="${textStyle}">${record}</span>
@@ -4512,22 +4515,52 @@ function runMveValidation(league) {
 
 // ── RENDER ALL ────────────────────────────────────────────────
 // ── SCREENSHOT / CAPTURE ──────────────────────────────────────
+
+// Temporarily set overflow:visible on root + all scrollable descendants/ancestors
+// so html2canvas captures the full content. Returns a restore function.
+function expandOverflowForCapture(root) {
+  const saved = [];
+  const expand = el => {
+    const cs = window.getComputedStyle(el);
+    if (/auto|scroll|hidden/.test(cs.overflowX) || /auto|scroll|hidden/.test(cs.overflowY)) {
+      saved.push({ el, ox: el.style.overflowX, oy: el.style.overflowY, w: el.style.width, h: el.style.height });
+      el.style.overflowX = 'visible';
+      el.style.overflowY = 'visible';
+      el.style.width  = el.scrollWidth  + 'px';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  };
+  // Expand all scrollable children inside root
+  root.querySelectorAll('*').forEach(expand);
+  // Expand root itself and its ancestors up to (but not including) <html>
+  let cur = root;
+  while (cur && cur !== document.documentElement) { expand(cur); cur = cur.parentElement; }
+  return () => saved.forEach(s => {
+    s.el.style.overflowX = s.ox; s.el.style.overflowY = s.oy;
+    s.el.style.width = s.w;     s.el.style.height = s.h;
+  });
+}
+
 async function captureSection(btn) {
   const section = btn.closest('.section') || btn.closest('.section-title')?.parentElement;
   if (!section) return;
   if (typeof html2canvas === 'undefined') { alert('Screenshot library not loaded yet — try again in a moment.'); return; }
   const orig = btn.textContent;
   btn.textContent = '⏳'; btn.disabled = true;
+  const restore = expandOverflowForCapture(section);
   try {
     const canvas = await html2canvas(section, {
       backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
       scale: 2, useCORS: true, logging: false,
+      width: section.scrollWidth, height: section.scrollHeight,
+      windowWidth: section.scrollWidth, windowHeight: section.scrollHeight,
     });
+    restore();
     const a = document.createElement('a');
     a.download = `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}.png`;
     a.href = canvas.toDataURL('image/png');
     a.click();
-  } catch(e) { alert('Capture failed: ' + e.message); }
+  } catch(e) { restore(); alert('Capture failed: ' + e.message); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
@@ -4589,16 +4622,20 @@ async function captureById(id, btn) {
   if (typeof html2canvas === 'undefined') { alert('Screenshot library not loaded yet — try again in a moment.'); return; }
   const orig = btn.textContent;
   btn.textContent = '⏳'; btn.disabled = true;
+  const restore = expandOverflowForCapture(el);
   try {
     const canvas = await html2canvas(el, {
       backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
       scale: 2, useCORS: true, logging: false,
+      width: el.scrollWidth, height: el.scrollHeight,
+      windowWidth: el.scrollWidth, windowHeight: el.scrollHeight,
     });
+    restore();
     const a = document.createElement('a');
     a.download = `franchise-intel-${Date.now()}.png`;
     a.href = canvas.toDataURL('image/png');
     a.click();
-  } catch(e) { console.error(e); }
+  } catch(e) { restore(); console.error(e); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
@@ -4746,24 +4783,38 @@ function renderDraftHistory() {
     if (p.value) teamStats[rid].totalValue += p.value;
   });
 
-  // Letter grade per team
-  function teamLetterGrade(st) {
+  // Relative/percentile letter grades — rank all teams by avg dynasty value per graded pick
+  const teamScoreList = Object.entries(teamStats)
+    .map(([rid, st]) => {
+      const graded = st.total - st.na;
+      return { rid, score: graded > 0 ? st.totalValue / graded : 0 };
+    })
+    .sort((a, b) => b.score - a.score);
+  const nTeams = teamScoreList.length;
+  const teamRankMap = {};
+  teamScoreList.forEach((t, i) => { teamRankMap[t.rid] = i; });
+
+  function teamLetterGrade(rid) {
+    const st = teamStats[rid];
+    if (!st) return '—';
     const graded = st.total - st.na;
     if (!graded) return '—';
-    const hitRate = (st.hit + st.solid) / graded;
-    if (hitRate >= 0.55) return 'A';
-    if (hitRate >= 0.40) return 'B';
-    if (hitRate >= 0.28) return 'C';
-    if (hitRate >= 0.15) return 'D';
-    return 'F';
+    const rank = teamRankMap[rid] ?? (nTeams - 1);
+    const pct = nTeams > 1 ? rank / (nTeams - 1) : 0; // 0 = best, 1 = worst
+    if (pct < 0.15) return 'A+';
+    if (pct < 0.35) return 'A';
+    if (pct < 0.55) return 'B+';
+    if (pct < 0.75) return 'B';
+    if (pct < 0.90) return 'C';
+    return 'D';
   }
 
-  const gradeColors = { A: 'var(--green)', B: 'var(--accent)', C: 'var(--yellow)', D: 'var(--orange)', F: 'var(--red)', '—': 'var(--muted)' };
+  const gradeColors = { 'A+': '#3fb950', A: 'var(--green)', 'B+': '#58a6ff', B: 'var(--accent)', C: 'var(--yellow)', D: 'var(--orange)', F: 'var(--red)', '—': 'var(--muted)' };
 
   const reportCards = Object.entries(teamStats)
-    .sort((a, b) => ((b[1].hit + b[1].solid) / Math.max(b[1].total - b[1].na, 1)) - ((a[1].hit + a[1].solid) / Math.max(a[1].total - a[1].na, 1)))
+    .sort((a, b) => (teamRankMap[a[0]] ?? 999) - (teamRankMap[b[0]] ?? 999))
     .map(([rid, st]) => {
-      const lg = teamLetterGrade(st);
+      const lg = teamLetterGrade(rid);
       const gc = gradeColors[lg] || 'var(--muted)';
       const graded = st.total - st.na;
       const hitPct = graded ? Math.round((st.hit / graded) * 100) : 0;
@@ -5082,7 +5133,21 @@ function renderPlayoffs() {
   const managers = poManagerIndex();
   const allScores= poAllScores();
   if (!seasons.length) { el.innerHTML='<p style="color:var(--muted);padding:60px;text-align:center">No completed playoff data found. If your league has finished playoffs, try reloading.</p>'; return; }
-  el.innerHTML = poChampHistory(seasons) + poManagerProfiles(managers) + poLeagueRecords(allScores, seasons) + poBracketHistory(seasons) + poWhatWins(seasons, managers, allScores);
+
+  // Year selector — consistent with draft history tab style
+  const allYears = seasons.map(s => String(s.season)).sort((a, b) => b - a);
+  const selYear  = (() => { const v = document.getElementById('po-season-sel')?.value; return (v && allYears.includes(v)) ? v : 'ALL'; })();
+  const ctrl = `style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;font-size:.83rem"`;
+  const yearOptions = ['<option value="ALL">All Seasons</option>',
+    ...allYears.map(y => `<option value="${y}" ${y === selYear ? 'selected' : ''}>${y} Season</option>`)
+  ].join('');
+  const selectorHtml = `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px">
+    <select id="po-season-sel" ${ctrl} onchange="renderPlayoffs()">${yearOptions}</select>
+    <span style="font-size:.78rem;color:var(--muted)">${selYear === 'ALL' ? allYears.length + ' season' + (allYears.length !== 1 ? 's' : '') : selYear + ' season'}</span>
+  </div>`;
+
+  const filteredSeasons = selYear === 'ALL' ? seasons : seasons.filter(s => String(s.season) === selYear);
+  el.innerHTML = selectorHtml + poChampHistory(filteredSeasons) + poManagerProfiles(managers) + poLeagueRecords(allScores, filteredSeasons) + poBracketHistory(filteredSeasons) + poWhatWins(filteredSeasons, managers, allScores);
 }
 
 // ── Section 1: Championship History ──────────────────────────
