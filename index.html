@@ -4531,15 +4531,38 @@ function expandOverflowForCapture(root) {
       el.style.height = el.scrollHeight + 'px';
     }
   };
-  // Expand all scrollable children inside root
   root.querySelectorAll('*').forEach(expand);
-  // Expand root itself and its ancestors up to (but not including) <html>
   let cur = root;
   while (cur && cur !== document.documentElement) { expand(cur); cur = cur.parentElement; }
   return () => saved.forEach(s => {
     s.el.style.overflowX = s.ox; s.el.style.overflowY = s.oy;
     s.el.style.width = s.w;     s.el.style.height = s.h;
   });
+}
+
+// Save a canvas as an image. On mobile uses the Web Share API so the
+// native share sheet opens (user can Save to Photos, Messages, etc.).
+// Falls back to a download link on desktop or if sharing isn't available.
+async function saveCanvas(canvas, filename) {
+  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (onMobile && window.isSecureContext && navigator.canShare) {
+    try {
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      const file = new File([blob], filename, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Dynasty Analytics' });
+        return;
+      }
+    } catch(e) {
+      if (e.name !== 'AbortError') console.warn('Share failed, falling back to download:', e);
+      else return; // user cancelled — don't also trigger download
+    }
+  }
+  // Desktop fallback (also used when share API unavailable)
+  const a = document.createElement('a');
+  a.download = filename;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
 }
 
 async function captureSection(btn) {
@@ -4557,10 +4580,7 @@ async function captureSection(btn) {
       windowWidth: section.scrollWidth, windowHeight: section.scrollHeight,
     });
     restore();
-    const a = document.createElement('a');
-    a.download = `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}.png`;
-    a.href = canvas.toDataURL('image/png');
-    a.click();
+    await saveCanvas(canvas, `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}.png`);
   } catch(e) { restore(); alert('Capture failed: ' + e.message); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
@@ -4632,10 +4652,7 @@ async function captureById(id, btn) {
       windowWidth: el.scrollWidth, windowHeight: el.scrollHeight,
     });
     restore();
-    const a = document.createElement('a');
-    a.download = `franchise-intel-${Date.now()}.png`;
-    a.href = canvas.toDataURL('image/png');
-    a.click();
+    await saveCanvas(canvas, `franchise-intel-${new Date().toISOString().slice(0,10)}.png`);
   } catch(e) { restore(); console.error(e); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
