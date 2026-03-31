@@ -4545,7 +4545,7 @@ function expandOverflowForCapture(root) {
 // Falls back to a download link on desktop or if sharing isn't available.
 async function saveCanvas(canvas, filename) {
   const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (onMobile && window.isSecureContext && navigator.canShare) {
+  if (onMobile && navigator.canShare) {
     try {
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
       const file = new File([blob], filename, { type: 'image/png' });
@@ -4554,15 +4554,25 @@ async function saveCanvas(canvas, filename) {
         return;
       }
     } catch(e) {
-      if (e.name !== 'AbortError') console.warn('Share failed, falling back to download:', e);
-      else return; // user cancelled — don't also trigger download
+      if (e.name === 'AbortError') return; // user cancelled — don't also trigger download
+      console.warn('Share failed, falling back to download:', e);
     }
   }
-  // Desktop fallback (also used when share API unavailable)
-  const a = document.createElement('a');
-  a.download = filename;
-  a.href = canvas.toDataURL('image/png');
-  a.click();
+  // Desktop / fallback: blob URL is more reliable than toDataURL on mobile
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.download = filename; a.href = url;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+}
+
+// Wrap html2canvas in a timeout so it never hangs the button forever.
+function html2canvasWithTimeout(el, opts, timeoutMs = 25000) {
+  return Promise.race([
+    html2canvas(el, opts),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Capture timed out — try a smaller section')), timeoutMs)),
+  ]);
 }
 
 async function captureSection(btn) {
@@ -4571,11 +4581,13 @@ async function captureSection(btn) {
   if (typeof html2canvas === 'undefined') { alert('Screenshot library not loaded yet — try again in a moment.'); return; }
   const orig = btn.textContent;
   btn.textContent = '⏳'; btn.disabled = true;
+  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const restore = expandOverflowForCapture(section);
   try {
-    const canvas = await html2canvas(section, {
+    const canvas = await html2canvasWithTimeout(section, {
       backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
-      scale: 2, useCORS: true, logging: false,
+      scale: onMobile ? 1 : 2,   // 2× on mobile easily OOMs
+      useCORS: true, allowTaint: true, logging: false,  // allowTaint prevents hanging on cross-origin images
       width: section.scrollWidth, height: section.scrollHeight,
       windowWidth: section.scrollWidth, windowHeight: section.scrollHeight,
     });
@@ -4643,17 +4655,19 @@ async function captureById(id, btn) {
   if (typeof html2canvas === 'undefined') { alert('Screenshot library not loaded yet — try again in a moment.'); return; }
   const orig = btn.textContent;
   btn.textContent = '⏳'; btn.disabled = true;
+  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const restore = expandOverflowForCapture(el);
   try {
-    const canvas = await html2canvas(el, {
+    const canvas = await html2canvasWithTimeout(el, {
       backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
-      scale: 2, useCORS: true, logging: false,
+      scale: onMobile ? 1 : 2,
+      useCORS: true, allowTaint: true, logging: false,
       width: el.scrollWidth, height: el.scrollHeight,
       windowWidth: el.scrollWidth, windowHeight: el.scrollHeight,
     });
     restore();
     await saveCanvas(canvas, `franchise-intel-${new Date().toISOString().slice(0,10)}.png`);
-  } catch(e) { restore(); console.error(e); }
+  } catch(e) { restore(); alert('Capture failed: ' + e.message); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
