@@ -278,7 +278,14 @@
 
     /* FRANCHISE CARDS */
     .franchise-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; margin-bottom:24px; }
-    .franchise-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:12px; }
+    .franchise-grid.screenshot-mode { grid-template-columns:repeat(3,1fr); gap:12px; }
+    .franchise-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:12px; position:relative; }
+    .franchise-card.fc-hidden { display:none; }
+    .fc-hide-btn { position:absolute;top:8px;right:8px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:4px;font-size:.65rem;padding:1px 6px;cursor:pointer;line-height:1.6;transition:color .15s,border-color .15s,background .15s; }
+    .fc-hide-btn:hover { color:var(--red);border-color:var(--red); }
+    .fc-hide-btn.fc-hidden-toggle { color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.08); }
+    .fc-ghost { background:var(--surface2);border:1px dashed var(--border);border-radius:12px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.78rem;color:var(--muted); }
+    .fc-ghost button { background:transparent;border:1px solid var(--border);color:var(--accent);border-radius:4px;font-size:.65rem;padding:1px 8px;cursor:pointer;line-height:1.6; }
     .franchise-card-header { display:flex; align-items:center; gap:10px; }
     .franchise-card-avatar { width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--surface2);border:2px solid var(--border);flex-shrink:0; }
     .franchise-card-title { flex:1;min-width:0; }
@@ -360,22 +367,198 @@
     .val-warn { color:var(--yellow); }
     .val-fail { color:var(--red);font-weight:600; }
 
-    @media (max-width: 700px) {
-      header { position: sticky; top: 0; width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); overflow: visible; padding: 0 12px; }
-      .logo { padding: 12px 0; border-bottom: none; }
-      nav { flex-direction: row; overflow-x: auto; flex: 1; padding: 0; }
-      nav button { border-left: none; border-bottom: 2px solid transparent; padding: 12px 10px; justify-content: center; }
-      nav button.active { border-left-color: transparent; border-bottom-color: var(--accent); background: none; }
+    /* ── MOBILE TOPBAR (hidden on desktop) ───────────────────── */
+    #mobile-topbar {
+      display: none;
+      align-items: center;
+      position: sticky; top: 0; z-index: 195;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 14px;
+      height: 50px;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .m-logo { flex: 1; font-size: .95rem; font-weight: 700; color: var(--accent); }
+    #nav-hamburger {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 10px; cursor: pointer;
+      color: var(--text); font-size: 1.1rem; line-height: 1; flex-shrink: 0;
+    }
+    #nav-close-btn {
+      display: none;
+      background: none; border: none; color: var(--muted);
+      font-size: 1rem; cursor: pointer; padding: 2px 6px; margin-left: auto;
+      flex-shrink: 0;
+    }
+    #mobile-overlay {
+      display: none; position: fixed; inset: 0; z-index: 190;
+      background: rgba(0,0,0,.55);
+    }
+    #mobile-overlay.active { display: block; }
+
+    /* Data sources toggle — acts as a static label on desktop */
+    #data-sources-toggle {
+      background: none; border: none;
+      color: var(--muted); font-size: .65rem;
+      text-transform: uppercase; letter-spacing: .06em;
+      width: 100%; text-align: left; padding: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 6px; cursor: default;
+    }
+    .ds-arrow { font-size: .6rem; transition: transform .18s; }
+    #data-sources-panel { overflow: hidden; transition: max-height .2s ease; }
+
+    /* ── TABLET / MOBILE ≤ 768px ──────────────────────────────── */
+    @media (max-width: 768px) {
+      /* Show mobile topbar */
+      #mobile-topbar { display: flex; }
+      #nav-close-btn { display: block; }
+
+      /* Sidebar becomes a slide-out drawer */
+      header {
+        position: fixed;
+        left: 0; top: 0;
+        width: 240px; height: 100vh;
+        transform: translateX(-110%);
+        transition: transform .22s ease;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+        border-bottom: none;
+        overflow-y: auto; overflow-x: hidden;
+        padding: 0;
+        z-index: 200;
+      }
+      header.nav-open {
+        transform: translateX(0);
+        box-shadow: 4px 0 28px rgba(0,0,0,.5);
+      }
+
+      /* Logo row with close btn */
+      .logo {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 1rem; flex-shrink: 0;
+      }
+
+      /* Nav: vertical, full-width, touch-friendly */
+      nav {
+        flex-direction: column;
+        overflow-x: hidden;
+        padding: 6px 0; flex: none;
+      }
+      nav button {
+        border-left: 2px solid transparent;
+        border-bottom: none;
+        padding: 13px 16px;
+        font-size: .88rem;
+        justify-content: flex-start;
+        white-space: nowrap;
+      }
+      nav button.active {
+        border-left-color: var(--accent);
+        border-bottom-color: transparent;
+        background: rgba(88,166,255,.07);
+        color: var(--accent);
+      }
       .nav-shortcut { display: none; }
-      .league-controls { flex-direction: row; border-top: none; padding: 8px 0; width: 100%; }
-      .league-controls input { width: auto; flex: 1; }
-      .btn { width: auto; }
-      main { margin-left: 0; padding: 14px; }
-      .trade-layout { grid-template-columns: 1fr; }
-      .trade-sides { grid-template-columns: 1fr; }
+
+      /* League controls inside drawer */
+      .league-controls {
+        flex-direction: column;
+        border-top: 1px solid var(--border);
+        padding: 12px 14px; gap: 6px;
+      }
+      .league-controls input { width: 100%; }
+      .btn { width: 100%; }
+
+      /* Hide season switcher — available per-tab */
+      #sidebar-season { display: none !important; }
+
+      /* Data sources: collapsible on mobile, collapsed by default */
+      #data-sources-toggle { cursor: pointer; }
+      #data-sources-panel { max-height: 0; }
+      #data-sources-panel.ds-open { max-height: 220px; }
+      #data-sources-toggle .ds-arrow { transform: rotate(-90deg); }
+      #data-sources-toggle.ds-open .ds-arrow { transform: rotate(0deg); }
+
+      /* Main content — clear topbar, no sidebar margin */
+      main { margin-left: 0; padding: 12px; }
+
+      /* Metric summary cards: 2-column */
+      .card-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px; margin-bottom: 14px;
+      }
+      .card { padding: 10px 12px; }
+      .card-value { font-size: 1.15rem; }
+      .card-sub { font-size: .7rem; }
+
+      /* Section spacing */
+      .section { margin-bottom: 20px; }
+      .section-title { font-size: .88rem; margin-bottom: 8px; }
+
+      /* Charts */
+      .chart-wrap { padding: 12px; margin-bottom: 14px; }
+      .chart-wrap canvas { max-height: 220px; }
+
+      /* Tables: tighter cell padding */
+      .table-wrap { -webkit-overflow-scrolling: touch; }
+      thead th { padding: 7px 8px; font-size: .65rem; }
+      td { padding: 7px 8px; font-size: .78rem; }
+
+      /* Trade calculator */
+      .trade-layout { grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
+      .trade-sides { grid-template-columns: 1fr; gap: 10px; }
       .trade-divider { flex-direction: row; padding-top: 0; }
+      .trade-roster { max-height: 260px; }
+      .trade-summary { padding: 12px; }
+
+      /* Franchise & player grids */
+      .franchise-grid { grid-template-columns: 1fr; gap: 10px; }
+      .franchise-card { padding: 12px; gap: 8px; }
       .player-grid { grid-template-columns: 1fr; }
-      .franchise-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── SMALL PHONES ≤ 480px ─────────────────────────────────── */
+    @media (max-width: 480px) {
+      #mobile-topbar { height: 46px; padding: 0 10px; }
+      .m-logo { font-size: .88rem; }
+
+      main { padding: 8px; }
+
+      .card-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
+      .card { padding: 8px 10px; }
+      .card-label { font-size: .62rem; }
+      .card-value { font-size: .95rem; }
+      .card-sub { font-size: .65rem; }
+
+      .section { margin-bottom: 16px; }
+      .section-title { font-size: .82rem; gap: 5px; }
+      .section-note { font-size: .66rem; }
+
+      .chart-wrap { padding: 8px; }
+      .chart-wrap canvas { max-height: 170px; }
+
+      /* Tables: minimal padding, slightly smaller text */
+      thead th { padding: 5px 6px; font-size: .6rem; }
+      td { padding: 5px 6px; font-size: .73rem; }
+
+      /* Franchise cards: compact */
+      .franchise-card { padding: 10px; gap: 7px; }
+      .franchise-card-name { font-size: .82rem; }
+      .franchise-stat-label { width: 66px; font-size: .71rem; }
+      .franchise-stat-val { min-width: 38px; font-size: .78rem; }
+      .franchise-card-avatar { width: 32px; height: 32px; }
+
+      /* Trade chips */
+      .trade-player-chip { padding: 5px 8px; font-size: .75rem; }
+      .pick-cap-badge { font-size: .67rem; padding: 2px 5px; }
+
+      /* Tighten section titles that wrap */
+      .section-title { flex-wrap: wrap; }
+      .capture-btn { font-size: .65rem; padding: 1px 6px; }
     }
 
     /* ── POSITIONAL ROOM GRID ─────────────────────────────── */
@@ -397,8 +580,16 @@
 </head>
 <body>
 
+<!-- ── MOBILE TOP BAR (hidden on desktop) ─────────────────── -->
+<div id="mobile-topbar">
+  <span class="m-logo">Dynasty Analytics</span>
+  <button id="nav-hamburger" onclick="mobileNavOpen()" aria-label="Open navigation">☰</button>
+</div>
+<!-- ── MOBILE OVERLAY ──────────────────────────────────────── -->
+<div id="mobile-overlay" onclick="mobileNavClose()"></div>
+
 <header>
-  <div class="logo">Dynasty Analytics</div>
+  <div class="logo">Dynasty Analytics <button id="nav-close-btn" onclick="mobileNavClose()" aria-label="Close navigation">✕</button></div>
   <nav id="main-nav">
     <button class="active" onclick="switchTab('overview')">Overview <span class="nav-shortcut">1</span></button>
     <button onclick="switchTab('power')">Power Rankings <span class="nav-shortcut">2</span></button>
@@ -419,27 +610,31 @@
     <button class="btn" onclick="initLoad()">Load</button>
   </div>
   <div style="padding:10px 14px;border-top:1px solid var(--border)">
-    <div style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Data Sources</div>
-    <div style="display:flex;flex-direction:column;gap:4px">
-      <div style="font-size:.7rem;color:var(--muted)">
-        <span style="color:var(--accent);font-weight:600">FC</span>
-        <span class="tip" data-tip="FantasyCalc dynasty trade values. Crowd-sourced market values updated daily. Reflects what the dynasty community thinks a player is worth in a trade. Used as the base for all MVE calculations." style="margin-left:2px">?</span>
-        <span style="margin-left:4px">FantasyCalc</span>
-      </div>
-      <div style="font-size:.7rem;color:var(--muted)">
-        <span style="color:var(--purple);font-weight:600">KTC</span>
-        <span class="tip" data-tip="KeepTradeCut dynasty values. Independent market-based valuations. When available, KTC is used as a sentiment check — if FC and KTC disagree significantly on a player, the trade calculator flags it. KTC data loads via a live API call and may be blocked by CORS on file:// pages." style="margin-left:2px">?</span>
-        <span style="margin-left:4px">KeepTradeCut</span>
-      </div>
-      <div style="font-size:.7rem;color:var(--muted)">
-        <span style="color:#94a3b8;font-weight:600">MVE</span>
-        <span class="tip" data-tip="Multi-Variable Evaluation — this app's own dynasty scoring system. Takes FantasyCalc base values and adjusts for: player tier (T1 elite premium → T5 depth discount), age curve (≤22 boost, 30+ penalty), role (Elite Locked-In vs Committee vs Backup), and positional scarcity. MVE values are used for Franchise Intel tiers and the League Intel table." style="margin-left:2px">?</span>
-        <span style="margin-left:4px">MVE (this app)</span>
-      </div>
-      <div style="font-size:.7rem;color:var(--muted)">
-        <span style="color:var(--yellow);font-weight:600">RDP</span>
-        <span class="tip" data-tip="Rookie Draft Pick values from FantasyCalc. Early/mid/late 1st-round picks have meaningfully different values. 2nd–4th round picks are flat. Pick values are projected based on the original team's dynasty strength — a Contender's 1st round pick is projected to be a late pick (less valuable), while a Rebuilder's pick is projected to be an early pick (more valuable)." style="margin-left:2px">?</span>
-        <span style="margin-left:4px">Rookie Draft Picks</span>
+    <button id="data-sources-toggle" onclick="toggleDataSources()">
+      <span>Data Sources</span><span class="ds-arrow">▾</span>
+    </button>
+    <div id="data-sources-panel">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="font-size:.7rem;color:var(--muted)">
+          <span style="color:var(--accent);font-weight:600">FC</span>
+          <span class="tip" data-tip="FantasyCalc dynasty trade values. Crowd-sourced market values updated daily. Reflects what the dynasty community thinks a player is worth in a trade. Used as the base for all MVE calculations." style="margin-left:2px">?</span>
+          <span style="margin-left:4px">FantasyCalc</span>
+        </div>
+        <div style="font-size:.7rem;color:var(--muted)">
+          <span style="color:var(--purple);font-weight:600">KTC</span>
+          <span class="tip" data-tip="KeepTradeCut dynasty values. Independent market-based valuations. When available, KTC is used as a sentiment check — if FC and KTC disagree significantly on a player, the trade calculator flags it. KTC data loads via a live API call and may be blocked by CORS on file:// pages." style="margin-left:2px">?</span>
+          <span style="margin-left:4px">KeepTradeCut</span>
+        </div>
+        <div style="font-size:.7rem;color:var(--muted)">
+          <span style="color:#94a3b8;font-weight:600">MVE</span>
+          <span class="tip" data-tip="Multi-Variable Evaluation — this app's own dynasty scoring system. Takes FantasyCalc base values and adjusts for: player tier (T1 elite premium → T5 depth discount), age curve (≤22 boost, 30+ penalty), role (Elite Locked-In vs Committee vs Backup), and positional scarcity. MVE values are used for Franchise Intel tiers and the League Intel table." style="margin-left:2px">?</span>
+          <span style="margin-left:4px">MVE (this app)</span>
+        </div>
+        <div style="font-size:.7rem;color:var(--muted)">
+          <span style="color:var(--yellow);font-weight:600">RDP</span>
+          <span class="tip" data-tip="Rookie Draft Pick values from FantasyCalc. Early/mid/late 1st-round picks have meaningfully different values. 2nd–4th round picks are flat. Pick values are projected based on the original team's dynasty strength — a Contender's 1st round pick is projected to be a late pick (less valuable), while a Rebuilder's pick is projected to be an early pick (more valuable)." style="margin-left:2px">?</span>
+          <span style="margin-left:4px">Rookie Draft Picks</span>
+        </div>
       </div>
     </div>
   </div>
@@ -3360,9 +3555,10 @@ function renderFranchiseIntel() {
   const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
 
   let html = `<div id="franchise-snapshot"><div class="section-title">Franchise Intelligence ${tip('Deep dynasty health cards for every team. Uses MVE (Multi-Variable Evaluation) — FantasyCalc values adjusted for age curve, player tier, role, positional scarcity, and KTC market sentiment. Tiers reflect absolute dynasty strength, not just rank in this league.')}
+    <button class="capture-btn" id="franchise-screenshot-mode-btn" onclick="toggleFranchiseScreenshotMode(this)" title="Toggle screenshot layout (3-column, hides ghosted teams)">🖼 Screenshot Mode</button>
     <button class="capture-btn" onclick="captureById('franchise-snapshot',this)" title="Save franchise cards as image">📷 Save</button>
     <span class="section-note">MVE layered valuation · ${S.ktcAvailable?'FantasyCalc + KTC overlay':'FantasyCalc only'}</span>
-  </div><div class="franchise-grid">`;
+  </div><div class="franchise-grid" id="franchise-grid">`;
 
   profiles.forEach(prof => {
     const cl = prof.classification;
@@ -3403,7 +3599,8 @@ function renderFranchiseIntel() {
       `<div style="font-size:.71rem;color:var(--muted);padding:3px 0;border-top:1px solid var(--border);margin-top:3px">→ ${a}</div>`
     ).join('');
 
-    html += `<div class="franchise-card">
+    html += `<div class="franchise-card" id="fc-card-${prof.rosterId}">
+      <button class="fc-hide-btn" onclick="toggleFranchiseCard(${prof.rosterId},this)" title="Hide from screenshot">✕</button>
       <div class="franchise-card-header">
         ${av}
         <div class="franchise-card-title">
@@ -4292,6 +4489,58 @@ async function captureSection(btn) {
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
+function toggleFranchiseCard(rosterId, btn) {
+  const card = document.getElementById('fc-card-' + rosterId);
+  if (!card) return;
+  const grid = document.getElementById('franchise-grid');
+  const isHiding = !card.classList.contains('fc-hidden');
+  card.classList.toggle('fc-hidden', isHiding);
+
+  // In non-screenshot-mode, show a ghost placeholder so layout doesn't jump
+  const ghostId = 'fc-ghost-' + rosterId;
+  let ghost = document.getElementById(ghostId);
+  if (!grid.classList.contains('screenshot-mode')) {
+    if (isHiding) {
+      if (!ghost) {
+        ghost = document.createElement('div');
+        ghost.className = 'fc-ghost';
+        ghost.id = ghostId;
+        ghost.innerHTML = `<span>${card.querySelector('.franchise-card-name')?.textContent || 'Team'} — hidden</span>
+          <button onclick="toggleFranchiseCard(${rosterId}, null)">Show</button>`;
+        card.parentNode.insertBefore(ghost, card.nextSibling);
+      }
+      ghost.style.display = '';
+    } else {
+      if (ghost) ghost.style.display = 'none';
+    }
+  } else {
+    // In screenshot mode, no ghost — just hide/show cleanly
+    if (ghost) ghost.style.display = 'none';
+  }
+
+  // Update the hide button state if passed
+  if (btn) {
+    btn.textContent = isHiding ? '👁' : '✕';
+    btn.title = isHiding ? 'Show in screenshot' : 'Hide from screenshot';
+    btn.classList.toggle('fc-hidden-toggle', isHiding);
+  }
+}
+
+function toggleFranchiseScreenshotMode(btn) {
+  const grid = document.getElementById('franchise-grid');
+  if (!grid) return;
+  const entering = !grid.classList.contains('screenshot-mode');
+  grid.classList.toggle('screenshot-mode', entering);
+  btn.textContent = entering ? '🖼 Exit Screenshot Mode' : '🖼 Screenshot Mode';
+  btn.style.color = entering ? 'var(--accent)' : '';
+  btn.style.borderColor = entering ? 'var(--accent)' : '';
+
+  // Hide all ghost placeholders while in screenshot mode; restore on exit
+  document.querySelectorAll('.fc-ghost').forEach(g => {
+    g.style.display = entering ? 'none' : '';
+  });
+}
+
 async function captureById(id, btn) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -4563,7 +4812,26 @@ function renderAll() {
 
 // ── TAB SWITCHING ─────────────────────────────────────────────
 let currentTab='overview';
+// ── MOBILE NAV ────────────────────────────────────────────────
+function mobileNavOpen() {
+  document.querySelector('header').classList.add('nav-open');
+  document.getElementById('mobile-overlay').classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+function mobileNavClose() {
+  document.querySelector('header').classList.remove('nav-open');
+  document.getElementById('mobile-overlay').classList.remove('active');
+  document.body.style.overflow = '';
+}
+function toggleDataSources() {
+  const panel  = document.getElementById('data-sources-panel');
+  const toggle = document.getElementById('data-sources-toggle');
+  const open   = panel.classList.toggle('ds-open');
+  toggle.classList.toggle('ds-open', open);
+}
+
 function switchTab(name) {
+  mobileNavClose();
   document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('#main-nav button').forEach(e=>e.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
@@ -4784,6 +5052,7 @@ function setTrendsPos(p) {
 
 // ── KEYBOARD SHORTCUTS ────────────────────────────────────────
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { mobileNavClose(); return; }
   if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
   const map = {'1':'overview','2':'power','3':'players','4':'trade','5':'wrapped','6':'franchise','7':'league-intel','8':'draft-history','9':'trends'};
   if (map[e.key]) switchTab(map[e.key]);
