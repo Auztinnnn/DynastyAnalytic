@@ -4517,99 +4517,91 @@ function runMveValidation(league) {
 // ── RENDER ALL ────────────────────────────────────────────────
 // ── SCREENSHOT / CAPTURE ──────────────────────────────────────
 
-// Temporarily set overflow:visible on root + all scrollable descendants/ancestors
-// so html2canvas captures the full content. Returns a restore function.
-function expandOverflowForCapture(root) {
-  const saved = [];
-  const expand = el => {
-    const cs = window.getComputedStyle(el);
-    if (/auto|scroll|hidden/.test(cs.overflowX) || /auto|scroll|hidden/.test(cs.overflowY)) {
-      saved.push({ el, ox: el.style.overflowX, oy: el.style.overflowY, w: el.style.width, h: el.style.height });
-      el.style.overflowX = 'visible';
-      el.style.overflowY = 'visible';
-      el.style.width  = el.scrollWidth  + 'px';
-      el.style.height = el.scrollHeight + 'px';
-    }
-  };
-  root.querySelectorAll('*').forEach(expand);
-  let cur = root;
-  while (cur && cur !== document.documentElement) { expand(cur); cur = cur.parentElement; }
-  return () => saved.forEach(s => {
-    s.el.style.overflowX = s.ox; s.el.style.overflowY = s.oy;
-    s.el.style.width = s.w;     s.el.style.height = s.h;
-  });
-}
-
 // Save a canvas as an image. On mobile uses the Web Share API so the
 // native share sheet opens (user can Save to Photos, Messages, etc.).
-// Falls back to a download link on desktop or if sharing isn't available.
+// Falls back to a blob-URL download on desktop.
 async function saveCanvas(canvas, filename) {
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
   const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   if (onMobile && navigator.canShare) {
     try {
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
       const file = new File([blob], filename, { type: 'image/png' });
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Dynasty Analytics' });
         return;
       }
     } catch(e) {
-      if (e.name === 'AbortError') return; // user cancelled — don't also trigger download
+      if (e.name === 'AbortError') return;
       console.warn('Share failed, falling back to download:', e);
     }
   }
-  // Desktop / fallback: blob URL is more reliable than toDataURL on mobile
-  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
   a.download = filename; a.href = url;
   document.body.appendChild(a); a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-// Replace all <img> inside root with same-size colored placeholders.
-// Returns a function that swaps them back. This prevents html2canvas
-// from loading any cross-origin images, which causes it to hang on mobile.
-function swapImagesForCapture(root) {
-  const imgs = Array.from(root.querySelectorAll('img'));
-  const posColors = { QB:'#6d28d9', RB:'#166534', WR:'#1d4ed8', TE:'#92400e', K:'#374151', DEF:'#374151' };
-  imgs.forEach(img => {
-    const w = img.offsetWidth || parseInt(img.style.width) || img.width || 28;
-    const h = img.offsetHeight || parseInt(img.style.height) || img.height || 28;
-    const pos = (img.alt || '').toUpperCase();
-    const bg = posColors[pos] || '#21262d';
-    const ph = document.createElement('span');
-    ph.style.cssText = `display:inline-block;width:${w}px;height:${h}px;border-radius:50%;background:${bg};flex-shrink:0;vertical-align:middle`;
-    img.parentNode.replaceChild(ph, img);
-    ph._origImg = img;
-  });
-  return () => imgs.forEach(img => {
-    if (img.parentNode) return; // already restored
-    const ph = root.querySelector(`span[style*="border-radius:50%"]`);
-    // Walk all placeholders to find the matching one
-  }) || (() => {
-    root.querySelectorAll('span[_origImg]').forEach(ph => {
-      if (ph._origImg) ph.parentNode.replaceChild(ph._origImg, ph);
-    });
-  });
-}
-
-// Swap images, call html2canvas, then restore — guarantees no image-load hang.
+// Clone el into an off-screen container, expand all overflow in the clone,
+// copy live canvas pixel data into cloned canvases, strip cross-origin images,
+// then run html2canvas on the clone. Never touches the live DOM layout.
 async function captureElement(el, scale) {
-  const restoreImgs = swapImagesForCapture(el);
+  // Measure full scroll dimensions before cloning
+  const fullW = el.scrollWidth;
+  const fullH = el.scrollHeight;
+
+  // Create an off-screen wrapper so html2canvas sees full dimensions
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = `position:fixed;top:0;left:-99999px;width:${fullW}px;overflow:visible;z-index:-999;pointer-events:none`;
+  document.body.appendChild(wrapper);
+
+  const clone = el.cloneNode(true);
+  clone.style.cssText += `;width:${fullW}px;height:auto;overflow:visible`;
+  wrapper.appendChild(clone);
+
+  // Copy pixel data from every live canvas into its cloned counterpart
+  const liveCanvases  = Array.from(el.querySelectorAll('canvas'));
+  const cloneCanvases = Array.from(clone.querySelectorAll('canvas'));
+  liveCanvases.forEach((src, i) => {
+    const dst = cloneCanvases[i];
+    if (!dst) return;
+    try {
+      dst.width  = src.width;
+      dst.height = src.height;
+      dst.getContext('2d').drawImage(src, 0, 0);
+    } catch(e) { /* tainted canvas — leave blank */ }
+  });
+
+  // Replace all <img> in the clone with solid-color placeholders
+  // so html2canvas never makes a network request
+  clone.querySelectorAll('img').forEach(img => {
+    const w = img.offsetWidth  || parseInt(img.getAttribute('width'))  || 28;
+    const h = img.offsetHeight || parseInt(img.getAttribute('height')) || 28;
+    const ph = document.createElement('span');
+    ph.style.cssText = `display:inline-block;width:${w}px;height:${h}px;border-radius:50%;background:#21262d;flex-shrink:0;vertical-align:middle`;
+    img.parentNode.replaceChild(ph, img);
+  });
+
+  // Expand overflow on all descendants inside the clone
+  clone.querySelectorAll('*').forEach(child => {
+    const cs = window.getComputedStyle(child);
+    if (/auto|scroll|hidden/.test(cs.overflowX) || /auto|scroll|hidden/.test(cs.overflowY)) {
+      child.style.overflow = 'visible';
+      child.style.width    = child.scrollWidth  + 'px';
+      child.style.height   = child.scrollHeight + 'px';
+    }
+  });
+
   try {
-    return await html2canvas(el, {
+    return await html2canvas(clone, {
       backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
       scale, useCORS: false, allowTaint: true, logging: false,
-      imageTimeout: 1,  // skip any remaining images immediately
-      width: el.scrollWidth, height: el.scrollHeight,
-      windowWidth: el.scrollWidth, windowHeight: el.scrollHeight,
+      imageTimeout: 0,
+      width: clone.scrollWidth, height: clone.scrollHeight,
+      windowWidth: clone.scrollWidth, windowHeight: clone.scrollHeight,
     });
   } finally {
-    // Restore original images after canvas is rendered
-    el.querySelectorAll('span').forEach(ph => {
-      if (ph._origImg) ph.parentNode.replaceChild(ph._origImg, ph);
-    });
+    document.body.removeChild(wrapper);
   }
 }
 
@@ -4620,12 +4612,10 @@ async function captureSection(btn) {
   const orig = btn.textContent;
   btn.textContent = '⏳'; btn.disabled = true;
   const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const restore = expandOverflowForCapture(section);
   try {
     const canvas = await captureElement(section, onMobile ? 1 : 2);
-    restore();
     await saveCanvas(canvas, `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}.png`);
-  } catch(e) { restore(); alert('Capture failed: ' + e.message); }
+  } catch(e) { alert('Capture failed: ' + e.message); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
@@ -4688,12 +4678,10 @@ async function captureById(id, btn) {
   const orig = btn.textContent;
   btn.textContent = '⏳'; btn.disabled = true;
   const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const restore = expandOverflowForCapture(el);
   try {
     const canvas = await captureElement(el, onMobile ? 1 : 2);
-    restore();
     await saveCanvas(canvas, `franchise-intel-${new Date().toISOString().slice(0,10)}.png`);
-  } catch(e) { restore(); alert('Capture failed: ' + e.message); }
+  } catch(e) { alert('Capture failed: ' + e.message); }
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
