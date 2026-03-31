@@ -4992,15 +4992,16 @@ async function loadPlayoffData() {
     try {
       const rawBracket = await fetch(`${BASE}/league/${lgId}/winners_bracket`, { signal: AbortSignal.timeout(8000) })
         .then(r => r.ok ? r.json() : []).catch(() => []);
-      // Normalize r/m/t1/t2/w/l to numbers — Sleeper sometimes returns them as strings
+      // Normalize all numeric fields — Sleeper sometimes returns them as strings
       const bracket = (rawBracket || []).map(b => ({
         ...b,
-        r: b.r != null ? parseInt(b.r) : b.r,
-        m: b.m != null ? parseInt(b.m) : b.m,
+        r:  b.r  != null ? parseInt(b.r)  : b.r,
+        m:  b.m  != null ? parseInt(b.m)  : b.m,
+        p:  b.p  != null ? parseInt(b.p)  : b.p,
         t1: b.t1 != null ? parseInt(b.t1) : b.t1,
         t2: b.t2 != null ? parseInt(b.t2) : b.t2,
-        w: b.w != null ? parseInt(b.w) : b.w,
-        l: b.l != null ? parseInt(b.l) : b.l,
+        w:  b.w  != null ? parseInt(b.w)  : b.w,
+        l:  b.l  != null ? parseInt(b.l)  : b.l,
       }));
       // Only count rounds that have a completed match (w set) — Sleeper pre-populates
       // placeholder entries for future rounds with w:null, which would inflate maxRound
@@ -5041,8 +5042,11 @@ function poSeasonResults() {
   for (const [lgId, pd] of Object.entries(S.playoffData)) {
     if (!pd.bracket || !pd.bracket.length || !pd.maxRound) continue;
     const maxR = pd.maxRound;
-    const champMatch = pd.bracket.find(b => b.r === maxR && b.m === 1);
-    const thirdMatch = pd.bracket.find(b => b.r === maxR && b.m === 2);
+    // Find championship by placement field (p=1) first; fall back to r=maxR,m=1
+    const champMatch = pd.bracket.find(b => b.p === 1 && b.w)
+      || pd.bracket.find(b => b.r === maxR && b.m === 1 && b.w);
+    const thirdMatch = pd.bracket.find(b => b.p === 3 && b.w)
+      || pd.bracket.find(b => b.r === maxR && b.m === 2 && b.w);
     if (!champMatch || !champMatch.w) continue;
     const rm  = pd.rosterMap;
     const get = id => rm[id] || { teamName: 'Team '+id, avatar: null, rosterId: id, ownerId: null };
@@ -5156,8 +5160,10 @@ function renderPlayoffs() {
       if (!pd) return `<tr><td>${lgId}</td><td>${lg?.season||'?'}</td><td style="color:var(--red)">No bracket data fetched</td><td>—</td><td>—</td></tr>`;
       const total = pd.bracket?.length || 0;
       const completed = (pd.bracket||[]).filter(b=>b.w).length;
-      const champMatch = pd.bracket?.find(b => b.r === pd.maxRound && b.m === 1);
-      const status = !total ? 'Empty bracket' : !completed ? 'Bracket has no winners set' : !pd.maxRound ? 'maxRound=0' : !champMatch ? `No champ match at r=${pd.maxRound} m=1` : !champMatch.w ? 'Champ match w=null' : '✓ OK';
+      const champMatch = pd.bracket?.find(b => b.p === 1 && b.w)
+        || pd.bracket?.find(b => b.r === pd.maxRound && b.m === 1 && b.w);
+      const r3entries = (pd.bracket||[]).filter(b=>b.r===pd.maxRound).map(b=>`m=${b.m} p=${b.p} w=${b.w}`).join('; ');
+      const status = !total ? 'Empty bracket' : !completed ? 'Bracket has no winners set' : !pd.maxRound ? 'maxRound=0' : !champMatch ? `No champ (r${pd.maxRound}: ${r3entries||'none'})` : '✓ OK';
       const color = status.startsWith('✓') ? 'var(--green)' : 'var(--yellow)';
       return `<tr><td style="font-size:.7rem;color:var(--muted)">${lgId}</td><td>${lg?.season||'?'}</td><td style="color:${color}">${status}</td><td>${total} (${completed} done)</td><td>${pd.maxRound}</td></tr>`;
     });
