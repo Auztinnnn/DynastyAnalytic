@@ -367,6 +367,43 @@
     .val-warn { color:var(--yellow); }
     .val-fail { color:var(--red);font-weight:600; }
 
+    /* ── PLAYOFFS TAB ─────────────────────────────────────── */
+    .po-profile-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; margin-bottom:24px; }
+    .po-mini-stat { background:var(--surface2); border-radius:6px; padding:7px 9px; }
+    .po-mini-label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; }
+    .po-mini-val { font-size:1rem; font-weight:700; color:var(--text); }
+    .po-records-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:10px; margin-bottom:24px; }
+    .po-record-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .po-record-label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+    .po-record-val { font-size:1.05rem; font-weight:700; color:var(--text); }
+    .po-record-sub { font-size:.72rem; color:var(--muted); margin-top:3px; }
+    .bracket-wrap { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px; align-items:start; }
+    .bracket-round-label { font-size:.6rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; font-weight:600; }
+    .bracket-match { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:9px 11px; margin-bottom:6px; }
+    .bracket-team { display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:.8rem; gap:8px; }
+    .bracket-team.w  { color:var(--text); font-weight:700; }
+    .bracket-team.l  { color:var(--muted); }
+    .bracket-pts.w { color:var(--green); font-weight:700; font-size:.8rem; }
+    .bracket-pts.l { color:var(--muted); font-size:.8rem; }
+    .what-wins-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(185px,1fr)); gap:12px; margin-bottom:16px; }
+    .what-wins-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+    .what-wins-label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+    .what-wins-val { font-size:1.1rem; font-weight:700; color:var(--text); }
+    .what-wins-sub { font-size:.72rem; color:var(--muted); margin-top:4px; line-height:1.4; }
+    .clutch-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:.64rem; font-weight:700; margin-left:5px; }
+    .po-season-header { font-size:.82rem; font-weight:700; color:var(--text); margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+    @media (max-width:768px) {
+      .po-profile-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+      .po-records-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+      .what-wins-grid  { grid-template-columns:repeat(2,1fr); gap:8px; }
+      .bracket-wrap    { grid-template-columns:1fr; gap:6px; }
+    }
+    @media (max-width:480px) {
+      .po-profile-grid { grid-template-columns:1fr; }
+      .po-records-grid { grid-template-columns:1fr; }
+      .what-wins-grid  { grid-template-columns:1fr; }
+    }
+
     /* ── MOBILE TOPBAR (hidden on desktop) ───────────────────── */
     #mobile-topbar {
       display: none;
@@ -600,6 +637,7 @@
     <button onclick="switchTab('league-intel')">League Intel <span class="nav-shortcut">7</span></button>
     <button onclick="switchTab('draft-history')">Draft History <span class="nav-shortcut">8</span></button>
     <button onclick="switchTab('trends')">Market Trends <span class="nav-shortcut">9</span></button>
+    <button onclick="switchTab('playoffs')">🏆 Playoffs</button>
   </nav>
   <div id="sidebar-season" style="padding:8px 14px 4px;border-top:1px solid var(--border);display:none">
     <div style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Season</div>
@@ -652,7 +690,8 @@
   <div id="tab-franchise"    class="tab-content"><div id="franchise-content"></div></div>
   <div id="tab-league-intel" class="tab-content"><div id="league-intel-content"></div></div>
   <div id="tab-draft-history" class="tab-content"><div id="draft-history-content"></div></div>
-  <div id="tab-trends" class="tab-content"><div id="trends-content"></div></div>
+  <div id="tab-trends"   class="tab-content"><div id="trends-content"></div></div>
+  <div id="tab-playoffs" class="tab-content"><div id="playoffs-content"></div></div>
 </main>
 
 <script>
@@ -685,9 +724,12 @@ let S = {
   playersFilter: { pos: 'ALL', week: 1 },
   posPercentiles: {},     // { QB:{p25,p50,p75}, RB:{...}, WR:{...}, TE:{...} }
   draftHistory: {},       // { leagueId: { season, rosterMap, picks[] } }
+  playoffData:  {},       // { leagueId: { bracket, matchupsByWeek, season, rosterMap, maxRound, regPPG } }
 };
 let draftHistoryLoaded  = false;
 let draftHistoryLoading = false;
+let playoffsLoaded  = false;
+let playoffsLoading = false;
 
 // ── HELPERS ───────────────────────────────────────────────────
 async function api(path, timeoutMs = 10000) {
@@ -4835,14 +4877,15 @@ function switchTab(name) {
   document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('#main-nav button').forEach(e=>e.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  const labels={ overview:'Overview', power:'Power Rankings', players:'Players', trade:'Trade Calculator', wrapped:'Fantasy Wrapped', franchise:'Franchise Intel', 'league-intel':'League Intel', 'draft-history':'Draft History' };
-  document.querySelectorAll('#main-nav button').forEach(b=>{ if(b.textContent===labels[name]) b.classList.add('active'); });
+  const labels={ overview:'Overview', power:'Power Rankings', players:'Players', trade:'Trade Calculator', wrapped:'Fantasy Wrapped', franchise:'Franchise Intel', 'league-intel':'League Intel', 'draft-history':'Draft History', playoffs:'🏆 Playoffs' };
+  document.querySelectorAll('#main-nav button').forEach(b=>{ if(b.textContent.trim()===labels[name]) b.classList.add('active'); });
   currentTab=name;
   if (name==='trade'&&S.currentLeagueId)        renderTradeCalculator();
   if (name==='players'&&S.currentLeagueId)      renderPlayersTab();
   if (name==='franchise'&&S.currentLeagueId)    renderFranchiseIntel();
-  if (name==='league-intel'&&S.currentLeagueId)    renderLeagueIntel();
-  if (name==='draft-history'&&S.currentLeagueId)  renderDraftHistory();
+  if (name==='league-intel'&&S.currentLeagueId) renderLeagueIntel();
+  if (name==='draft-history'&&S.currentLeagueId) renderDraftHistory();
+  if (name==='playoffs'&&S.currentLeagueId)     renderPlayoffs();
   if (name==='trends')  renderTrendsTab();
   setTimeout(addCaptureButtons, 60);
 }
@@ -4877,6 +4920,341 @@ function updateSidebarSeason() {
 function tip(text) {
   const escaped = text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   return `<span class="tip" data-tip="${escaped}">?</span>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── PLAYOFFS TAB ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+// ── Data loading ───────────────────────────────────────────────
+async function loadPlayoffData() {
+  if (playoffsLoading) return;
+  playoffsLoading = true;
+  S.playoffData = {};
+  // All known league IDs (current season chain + any extended draft history seasons)
+  const allIds = new Set([...S.seasonChain, ...Object.keys(S.draftHistory)]);
+  for (const lgId of allIds) {
+    const lg = S.leagues[lgId];
+    if (!lg) continue;
+    const psStart = lg.playoffWeekStart || 15;
+    try {
+      const bracket = await fetch(`${BASE}/league/${lgId}/winners_bracket`, { signal: AbortSignal.timeout(8000) })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+      const maxRound = (bracket && bracket.length) ? Math.max(...bracket.map(b => b.r || 0)) : 0;
+      // Fetch matchup data for each playoff round week
+      const matchupsByWeek = {};
+      for (let rnd = 1; rnd <= Math.max(maxRound, 3); rnd++) {
+        const wk = psStart + (rnd - 1);
+        const data = await fetch(`${BASE}/league/${lgId}/matchups/${wk}`, { signal: AbortSignal.timeout(8000) })
+          .then(r => r.ok ? r.json() : []).catch(() => []);
+        if (data && data.length && data.some(t => (t.points || 0) > 0)) matchupsByWeek[wk] = data;
+      }
+      // Regular season PPG per team
+      const regPPG = {};
+      const numReg = lg.completedWeeks?.length || 0;
+      Object.values(lg.rosterMap).forEach(r => { regPPG[r.rosterId] = numReg > 0 ? r.fpts / numReg : 0; });
+      S.playoffData[lgId] = { bracket: bracket || [], matchupsByWeek, season: lg.season, rosterMap: lg.rosterMap, playoffWeekStart: psStart, maxRound, regPPG };
+    } catch(e) { console.warn('Playoff load failed for', lgId, e); }
+  }
+  playoffsLoaded  = true;
+  playoffsLoading = false;
+}
+
+// ── Helper: scores for a bracket matchup ─────────────────────
+function poMatchScore(pd, round, matchupNum) {
+  const week = pd.playoffWeekStart + (round - 1);
+  const row  = (pd.matchupsByWeek[week] || []).filter(t => t.matchup_id === matchupNum);
+  const out  = {};
+  row.forEach(t => { out[t.roster_id] = t.points || 0; });
+  return out;
+}
+
+// ── Helper: per-season results (champion, runner-up, etc.) ────
+function poSeasonResults() {
+  const results = [];
+  for (const [lgId, pd] of Object.entries(S.playoffData)) {
+    if (!pd.bracket || !pd.bracket.length || !pd.maxRound) continue;
+    const maxR = pd.maxRound;
+    const champMatch = pd.bracket.find(b => b.r === maxR && b.m === 1);
+    const thirdMatch = pd.bracket.find(b => b.r === maxR && b.m === 2);
+    if (!champMatch || !champMatch.w) continue;
+    const rm  = pd.rosterMap;
+    const get = id => rm[id] || { teamName: 'Team '+id, avatar: null, rosterId: id, ownerId: null };
+    const cSc = poMatchScore(pd, maxR, 1);
+    const tSc = thirdMatch ? poMatchScore(pd, maxR, 2) : {};
+    // Seed detection: teams in r=1 didn't have byes; teams skipping r=1 had byes
+    const r1teams = new Set();
+    pd.bracket.filter(b => b.r === 1).forEach(b => { if (b.t1) r1teams.add(b.t1); if (b.t2) r1teams.add(b.t2); });
+    const byeTeams = new Set(pd.bracket.filter(b => b.r === 2 && b.t1 && !r1teams.has(b.t1)).map(b=>b.t1)
+      .concat(pd.bracket.filter(b => b.r === 2 && b.t2 && !r1teams.has(b.t2)).map(b=>b.t2)));
+    const champ = get(champMatch.w);
+    const champHadBye = byeTeams.has(champMatch.w);
+    // Compute all playoff stats for this season
+    const pStats = poComputeStats(pd);
+    results.push({ season: pd.season, leagueId: lgId, champion: champ, runnerUp: get(champMatch.l), third: thirdMatch?.w ? get(thirdMatch.w) : null, fourth: thirdMatch?.l ? get(thirdMatch.l) : null, champScore: cSc[champMatch.w]||0, ruScore: cSc[champMatch.l]||0, thirdScore: tSc[thirdMatch?.w]||0, fourthScore: tSc[thirdMatch?.l]||0, champRecord: `${rm[champMatch.w]?.wins||0}-${rm[champMatch.w]?.losses||0}`, champHadBye, champRegPPG: pd.regPPG[champMatch.w]||0, pStats, bracket: pd.bracket, matchupsByWeek: pd.matchupsByWeek, rosterMap: rm, playoffWeekStart: pd.playoffWeekStart, maxRound: maxR });
+  }
+  return results.sort((a,b) => b.season - a.season);
+}
+
+// ── Helper: per-team playoff stats for one season ─────────────
+function poComputeStats(pd) {
+  const stats = {};
+  const init  = id => { if (!stats[id]) stats[id] = { gp:0, w:0, l:0, pts:0, scores:[], isBye:false, finish:null }; };
+  const maxR  = pd.maxRound;
+  const r1ids = new Set();
+  pd.bracket.filter(b=>b.r===1).forEach(b=>{ if(b.t1) r1ids.add(b.t1); if(b.t2) r1ids.add(b.t2); });
+  pd.bracket.forEach(b => {
+    const { r, m, t1, t2, w, l } = b;
+    if (!w || !l) return;
+    init(w); init(l);
+    const sc = poMatchScore(pd, r, m);
+    const sw = sc[w]||0, sl = sc[l]||0;
+    stats[w].gp++; stats[w].w++; stats[w].pts+=sw; stats[w].scores.push(sw);
+    stats[l].gp++; stats[l].l++; stats[l].pts+=sl; stats[l].scores.push(sl);
+    if (r === maxR) { if (m===1){stats[w].finish=1;stats[l].finish=2;} else if (m===2){stats[w].finish=3;stats[l].finish=4;} }
+  });
+  // Mark bye teams
+  Object.keys(stats).forEach(id => { if (!r1ids.has(parseInt(id))) stats[id].isBye=true; });
+  return stats;
+}
+
+// ── Helper: all-time manager index ────────────────────────────
+function poManagerIndex() {
+  const idx = {};
+  for (const [lgId, pd] of Object.entries(S.playoffData)) {
+    if (!pd.bracket || !pd.maxRound) continue;
+    const results = poSeasonResults().find(r => r.leagueId === lgId);
+    if (!results) continue;
+    const pStats = poComputeStats(pd);
+    const rm     = pd.rosterMap;
+    Object.entries(pStats).forEach(([ridStr, st]) => {
+      const rid  = parseInt(ridStr);
+      const team = rm[rid]; if (!team) return;
+      const oid  = team.ownerId || 'roster_'+rid;
+      if (!idx[oid]) idx[oid] = { oid, teamNames:[], avatar:team.avatar, app:0, w:0, l:0, titles:0, finals:0, pts:0, gp:0, bestScore:0, seasons:[] };
+      const m = idx[oid];
+      if (!m.teamNames.includes(team.teamName)) m.teamNames.push(team.teamName);
+      if (!m.avatar && team.avatar) m.avatar = team.avatar;
+      m.app++; m.w+=st.w; m.l+=st.l; m.pts+=st.pts; m.gp+=st.gp;
+      if (st.scores.length) m.bestScore = Math.max(m.bestScore, ...st.scores);
+      if (st.finish===1){m.titles++;m.finals++;} else if(st.finish===2) m.finals++;
+      m.seasons.push({ season:pd.season, finish:st.finish });
+    });
+  }
+  return Object.values(idx).sort((a,b) => b.titles-a.titles||b.finals-a.finals||b.app-a.app);
+}
+
+// ── Helper: flat list of all playoff scores ────────────────────
+function poAllScores() {
+  const out = [];
+  for (const [lgId, pd] of Object.entries(S.playoffData)) {
+    if (!pd.bracket || !pd.maxRound) continue;
+    const rm = pd.rosterMap;
+    pd.bracket.forEach(b => {
+      const {r,m,t1,t2,w,l} = b; if(!w||!l) return;
+      const sc   = poMatchScore(pd,r,m);
+      const isF  = r===pd.maxRound && m===1;
+      [[t1||w,t2||l],[t2||l,t1||w]].slice(0,1); // de-dup via both sides
+      [t1,t2].forEach(rid => {
+        if (!rid) return;
+        const opp = rid===t1?t2:t1;
+        out.push({ rid, teamName:(rm[rid]?.teamName||'Team '+rid), season:pd.season, round:r, pts:sc[rid]||0, oppPts:sc[opp]||0, isWin:w===rid, isFinal:isF, lgId });
+      });
+    });
+  }
+  return out;
+}
+
+// ── Helper: ordinal suffix ─────────────────────────────────────
+function poOrd(n) { return n===1?'1st':n===2?'2nd':n===3?'3rd':n+'th'; }
+
+// ── MAIN RENDER ───────────────────────────────────────────────
+function renderPlayoffs() {
+  const el = document.getElementById('playoffs-content');
+  if (!el) return;
+  if (!S.currentLeagueId) { el.innerHTML='<p style="color:var(--muted);padding:60px;text-align:center">Load a league first.</p>'; return; }
+  if (!playoffsLoaded) {
+    el.innerHTML='<div style="text-align:center;padding:60px"><div class="spinner"></div><p style="color:var(--muted);margin-top:12px;font-size:.88rem">Loading playoff history…</p></div>';
+    if (!playoffsLoading) loadPlayoffData().then(()=>renderPlayoffs());
+    return;
+  }
+  const seasons  = poSeasonResults();
+  const managers = poManagerIndex();
+  const allScores= poAllScores();
+  if (!seasons.length) { el.innerHTML='<p style="color:var(--muted);padding:60px;text-align:center">No completed playoff data found. If your league has finished playoffs, try reloading.</p>'; return; }
+  el.innerHTML = poChampHistory(seasons) + poManagerProfiles(managers) + poLeagueRecords(allScores, seasons) + poBracketHistory(seasons) + poWhatWins(seasons, managers, allScores);
+}
+
+// ── Section 1: Championship History ──────────────────────────
+function poChampHistory(seasons) {
+  let rows = seasons.map(s => {
+    const margin = s.champScore && s.ruScore ? (s.champScore - s.ruScore) : null;
+    return `<tr>
+      <td class="bold">${s.season}</td>
+      <td class="bold" style="color:var(--yellow)">🥇 ${s.champion?.teamName||'—'}</td>
+      <td style="color:var(--green);font-weight:700">${s.champScore?s.champScore.toFixed(2):'—'}</td>
+      <td>${s.runnerUp?.teamName||'—'}</td>
+      <td style="color:var(--muted)">${s.ruScore?s.ruScore.toFixed(2):'—'}</td>
+      <td style="color:var(--muted)">${s.third?.teamName||'—'}</td>
+      <td style="color:var(--muted)">${s.champRecord}</td>
+      <td style="color:var(--muted)">${margin!=null?(margin>0?'+':'')+margin.toFixed(2):'—'}</td>
+    </tr>`;
+  }).join('');
+  // Superlative cards
+  const withScores = seasons.filter(s=>s.champScore&&s.ruScore);
+  const mostDom = withScores.length ? withScores.slice().sort((a,b)=>(b.champScore-b.ruScore)-(a.champScore-a.ruScore))[0] : null;
+  const closest  = withScores.length ? withScores.slice().sort((a,b)=>Math.abs(a.champScore-a.ruScore)-Math.abs(b.champScore-b.ruScore))[0] : null;
+  const titleMap = {}; seasons.forEach(s=>{ if(s.champion) titleMap[s.champion.teamName]=(titleMap[s.champion.teamName]||0)+1; });
+  const dynastyEntry = Object.entries(titleMap).filter(([,c])=>c>1).sort((a,b)=>b[1]-a[1])[0];
+  const byeWins = seasons.filter(s=>s.champHadBye).length;
+  let cards = `<div class="card-grid" style="margin-top:14px">`;
+  if (mostDom) cards+=`<div class="card"><div class="card-label">Most Dominant Win</div><div class="card-value" style="font-size:1rem">${mostDom.champion.teamName}</div><div class="card-sub">+${(mostDom.champScore-mostDom.ruScore).toFixed(1)} pts · ${mostDom.season}</div></div>`;
+  if (closest) cards+=`<div class="card"><div class="card-label">Closest Final</div><div class="card-value" style="font-size:1rem">${closest.champion.teamName}</div><div class="card-sub">Won by ${(closest.champScore-closest.ruScore).toFixed(2)} pts · ${closest.season}</div></div>`;
+  if (dynastyEntry) cards+=`<div class="card"><div class="card-label">Dynasty</div><div class="card-value" style="font-size:1rem">${dynastyEntry[0]}</div><div class="card-sub">${dynastyEntry[1]} titles</div></div>`;
+  if (seasons.length) cards+=`<div class="card"><div class="card-label">Bye → Champion</div><div class="card-value">${byeWins}/${seasons.length}</div><div class="card-sub">Top seeds converting titles</div></div>`;
+  cards += `</div>`;
+  return `<div class="section"><div class="section-title">🏆 Championship History <span class="section-note">${seasons.length} season${seasons.length!==1?'s':''}</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Season</th><th>Champion</th><th>Score</th><th>Runner-Up</th><th>Score</th><th>3rd Place</th><th>Reg Record</th><th>Margin</th></tr></thead><tbody>${rows}</tbody></table></div>${cards}</div>`;
+}
+
+// ── Section 2: Manager Playoff Profiles ───────────────────────
+function poManagerProfiles(managers) {
+  if (!managers.length) return '';
+  const cards = managers.map(m => {
+    const wPct  = m.gp > 0 ? (m.w/m.gp*100).toFixed(0)+'%' : '—';
+    const ppg   = m.gp > 0 ? (m.pts/m.gp).toFixed(1) : '—';
+    const label = m.titles>=2?{t:'Dynasty',c:'var(--yellow)'}:m.titles>=1?{t:'Champion',c:'var(--green)'}:m.finals>0?{t:'Contender',c:'var(--accent)'}:m.app>=2?{t:'Regular',c:'var(--purple)'}:{t:'Occasional',c:'var(--muted)'};
+    const av    = m.avatar?`<img src="${AV_URL(m.avatar)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:1.5px solid var(--border);flex-shrink:0" onerror="this.style.display='none'">`:`<span style="width:34px;height:34px;border-radius:50%;background:var(--surface2);display:inline-block;flex-shrink:0"></span>`;
+    const bestFinish = m.seasons.filter(s=>s.finish).map(s=>s.finish).sort((a,b)=>a-b)[0];
+    return `<div class="card" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:9px">
+        ${av}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.87rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.teamNames[m.teamNames.length-1]||'Unknown'}</div>
+          <span style="display:inline-block;margin-top:3px;padding:2px 8px;border-radius:20px;font-size:.62rem;font-weight:700;background:rgba(255,255,255,.06);color:${label.c}">${label.t}</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div class="po-mini-stat"><div class="po-mini-label">Appearances</div><div class="po-mini-val">${m.app}</div></div>
+        <div class="po-mini-stat"><div class="po-mini-label">Titles</div><div class="po-mini-val" style="color:${m.titles>0?'var(--yellow)':'var(--text)'}">${m.titles}</div></div>
+        <div class="po-mini-stat"><div class="po-mini-label">W-L</div><div class="po-mini-val">${m.w}-${m.l}</div></div>
+        <div class="po-mini-stat"><div class="po-mini-label">Win %</div><div class="po-mini-val" style="color:var(--accent)">${wPct}</div></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap">
+        <span>Finals: <strong style="color:var(--text)">${m.finals}</strong></span>
+        <span>Avg PPG: <strong style="color:var(--text)">${ppg}</strong></span>
+        ${bestFinish?`<span>Best: <strong style="color:var(--text)">${poOrd(bestFinish)}</strong></span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="section"><div class="section-title">👤 Manager Playoff Profiles <span class="section-note">All-time · sorted by titles</span></div><div class="po-profile-grid">${cards}</div></div>`;
+}
+
+// ── Section 3: League Records ─────────────────────────────────
+function poLeagueRecords(allScores, seasons) {
+  if (!allScores.length) return '';
+  const validPts = allScores.filter(s=>s.pts>0);
+  if (!validPts.length) return '';
+  const highest    = validPts.slice().sort((a,b)=>b.pts-a.pts)[0];
+  const lowest     = validPts.slice().sort((a,b)=>a.pts-b.pts)[0];
+  const biggestW   = validPts.filter(s=>s.isWin).slice().sort((a,b)=>(b.pts-b.oppPts)-(a.pts-a.oppPts))[0];
+  const closestG   = validPts.filter(s=>s.isWin&&s.oppPts>0).slice().sort((a,b)=>Math.abs(a.pts-a.oppPts)-Math.abs(b.pts-b.oppPts))[0];
+  const champScores= validPts.filter(s=>s.isFinal);
+  const highestF   = champScores.length ? champScores.slice().sort((a,b)=>b.pts-a.pts)[0] : null;
+  const clutch     = validPts.filter(s=>s.isWin&&s.pts>0); // highest winning score
+  const rec = (label,val,sub) => `<div class="po-record-card"><div class="po-record-label">${label}</div><div class="po-record-val">${val}</div><div class="po-record-sub">${sub}</div></div>`;
+  let html = `<div class="po-records-grid">`;
+  if (highest)  html+=rec('Highest Playoff Score',highest.pts.toFixed(2),`${highest.teamName} · ${highest.season} R${highest.round}`);
+  if (lowest)   html+=rec('Lowest Playoff Score',lowest.pts.toFixed(2),`${lowest.teamName} · ${lowest.season} R${lowest.round}`);
+  if (biggestW) html+=rec('Biggest Blowout',`+${(biggestW.pts-biggestW.oppPts).toFixed(2)} pts`,`${biggestW.teamName} · ${biggestW.season}`);
+  if (closestG) html+=rec('Closest Playoff Game',`${(closestG.pts-closestG.oppPts).toFixed(2)} margin`,`${closestG.teamName} def. · ${closestG.season}`);
+  if (highestF) html+=rec('Best Championship Score',highestF.pts.toFixed(2),`${highestF.teamName} · ${highestF.season}`);
+  html+=`</div>`;
+  return `<div class="section"><div class="section-title">📊 League Playoff Records</div>${html}</div>`;
+}
+
+// ── Section 4: Bracket History ────────────────────────────────
+function poBracketHistory(seasons) {
+  if (!seasons.length) return '';
+  const roundLabel = r => r===1?'Round 1':r===2?'Semis':'Championship';
+  const seasonBlocks = seasons.map(s => {
+    const rounds = [...new Set(s.bracket.map(b=>b.r))].sort((a,b)=>a-b);
+    const cols = rounds.map(r => {
+      const matchups = s.bracket.filter(b=>b.r===r && b.w && b.l).sort((a,b)=>a.m-b.m);
+      const rm = s.rosterMap;
+      const cards = matchups.map(b => {
+        const sc   = poMatchScore({matchupsByWeek:s.matchupsByWeek,playoffWeekStart:s.playoffWeekStart},r,b.m);
+        const wsc  = sc[b.w]||0, lsc = sc[b.l]||0;
+        const wName= rm[b.w]?.teamName||'Team '+b.w;
+        const lName= rm[b.l]?.teamName||'Team '+b.l;
+        const isF  = r===s.maxRound&&b.m===1;
+        const icon = isF?'🏆 ':'';
+        return `<div class="bracket-match" style="${isF?'border-color:rgba(210,153,34,.4)':''}">
+          <div class="bracket-team w"><span>${icon}${wName}</span><span class="bracket-pts w">${wsc?wsc.toFixed(1):'—'}</span></div>
+          <div class="bracket-team l"><span>${lName}</span><span class="bracket-pts l">${lsc?lsc.toFixed(1):'—'}</span></div>
+        </div>`;
+      }).join('');
+      return `<div><div class="bracket-round-label">${roundLabel(r)}</div>${cards}</div>`;
+    }).join('');
+    return `<div class="section" style="margin-bottom:18px">
+      <div class="po-season-header"><span style="color:var(--yellow)">🏆 ${s.season} Playoffs</span><span style="font-size:.72rem;color:var(--muted);font-weight:400">${s.champion?.teamName} won the championship</span></div>
+      <div class="bracket-wrap">${cols}</div>
+    </div>`;
+  }).join('');
+  return `<div class="section"><div class="section-title">📋 Bracket History</div>${seasonBlocks}</div>`;
+}
+
+// ── Section 5: What Wins This League ─────────────────────────
+function poWhatWins(seasons, managers, allScores) {
+  if (!seasons.length) return '';
+  // Average winning seed (did top seeds / bye teams win?)
+  const byeWins  = seasons.filter(s=>s.champHadBye).length;
+  const byePct   = seasons.length ? Math.round(byeWins/seasons.length*100) : 0;
+  // Average champion regular season PPG
+  const avgChampPPG = seasons.filter(s=>s.champRegPPG>0).reduce((s,c)=>s+c.champRegPPG,0) / (seasons.filter(s=>s.champRegPPG>0).length||1);
+  // Clutch: playoff PPG vs regular season PPG for champions
+  const champPPGs = seasons.filter(s=>s.champScore>0).map(s => {
+    const pSt = s.pStats[s.champion?.rosterId];
+    const plPPG = pSt && pSt.gp > 0 ? pSt.pts / pSt.gp : 0;
+    return plPPG > 0 && s.champRegPPG > 0 ? plPPG / s.champRegPPG : null;
+  }).filter(Boolean);
+  const avgClutch = champPPGs.length ? champPPGs.reduce((a,b)=>a+b,0)/champPPGs.length : null;
+  // Highest final scores
+  const finalScores = allScores.filter(s=>s.isFinal&&s.pts>0);
+  const avgFinalScore = finalScores.length ? finalScores.reduce((a,b)=>a+b.pts,0)/finalScores.length : 0;
+  // Back-to-back appearances
+  const managersWithRepeats = managers.filter(m => {
+    const sortedSeasons = m.seasons.map(s=>s.season).sort();
+    for (let i=1;i<sortedSeasons.length;i++) if(sortedSeasons[i]-sortedSeasons[i-1]===1) return true;
+    return false;
+  });
+  // Most common finalist
+  const finalistMap = {};
+  managers.forEach(m=>{ if(m.finals>0) finalistMap[m.teamNames[m.teamNames.length-1]]=(finalistMap[m.teamNames[m.teamNames.length-1]]||0)+m.finals; });
+  const topFinalist = Object.entries(finalistMap).sort((a,b)=>b[1]-a[1])[0];
+  const wc = (label,val,sub) => `<div class="what-wins-card"><div class="what-wins-label">${label}</div><div class="what-wins-val">${val}</div><div class="what-wins-sub">${sub}</div></div>`;
+  let cards = `<div class="what-wins-grid">`;
+  cards += wc('Top Seeds Win',`${byePct}%`,`${byeWins} of ${seasons.length} champs had a first-round bye`);
+  if (avgChampPPG>0) cards += wc('Champ Reg Season PPG',avgChampPPG.toFixed(1),'Average regular-season scoring of champions');
+  if (avgFinalScore>0) cards += wc('Avg Championship Score',avgFinalScore.toFixed(1),'Points in the title game on average');
+  if (avgClutch) cards += wc('Playoff Clutch Factor',avgClutch.toFixed(2)+'×',`Champions avg ${((avgClutch-1)*100).toFixed(0)}% ${avgClutch>=1?'more':'less'} in playoffs vs reg season`);
+  if (managersWithRepeats.length) cards += wc('Repeat Contenders',managersWithRepeats.length,`Managers with back-to-back playoff appearances`);
+  if (topFinalist) cards += wc('Most Finals Appearances',topFinalist[0],`${topFinalist[1]} championship game${topFinalist[1]!==1?'s':''}`);
+  cards += `</div>`;
+  // Narrative summary
+  const dominant = byePct >= 70 ? 'Top seeds dominate — having a first-round bye is a massive advantage in this league.' : byePct <= 30 ? 'Lower seeds punch through regularly — the bye week is not a reliable edge here.' : 'The field is competitive — top seeds win often but upsets are common.';
+  const repeatability = managersWithRepeats.length >= managers.length * 0.5 ? 'Most contenders make it back year over year — consistent rosters define the league.' : 'The playoff field rotates frequently — sustained contention is hard to maintain.';
+  return `<div class="section"><div class="section-title">💡 What Wins This League <span class="section-note">Synthesized from ${seasons.length} seasons</span></div>
+    ${cards}
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-top:8px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Key Takeaways</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:.83rem;color:var(--text)">→ ${dominant}</div>
+        <div style="font-size:.83rem;color:var(--text)">→ ${repeatability}</div>
+        ${avgClutch?`<div style="font-size:.83rem;color:var(--text)">→ Championship teams score ${avgClutch>=1?`<strong style="color:var(--green)">${((avgClutch-1)*100).toFixed(0)}% above</strong>`:`<strong style="color:var(--red)">${((1-avgClutch)*100).toFixed(0)}% below</strong>`} their regular-season average in the playoffs.</div>`:''}
+      </div>
+    </div>
+  </div>`;
 }
 
 // ── MARKET TRENDS TAB ────────────────────────────────────────
