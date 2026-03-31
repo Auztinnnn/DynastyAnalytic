@@ -5137,7 +5137,30 @@ function renderPlayoffs() {
   const seasons  = poSeasonResults();
   const managers = poManagerIndex();
   const allScores= poAllScores();
-  if (!seasons.length) { el.innerHTML='<p style="color:var(--muted);padding:60px;text-align:center">No completed playoff data found. If your league has finished playoffs, try reloading.</p>'; return; }
+  if (!seasons.length) {
+    // Build diagnostic info to help identify what's missing
+    const chainIds = S.seasonChain || [];
+    const diagRows = chainIds.map(lgId => {
+      const pd = S.playoffData[lgId];
+      const lg = S.leagues[lgId];
+      if (!pd) return `<tr><td>${lgId}</td><td>${lg?.season||'?'}</td><td style="color:var(--red)">No bracket data fetched</td><td>—</td><td>—</td></tr>`;
+      const total = pd.bracket?.length || 0;
+      const completed = (pd.bracket||[]).filter(b=>b.w).length;
+      const champMatch = pd.bracket?.find(b => b.r === pd.maxRound && b.m === 1);
+      const status = !total ? 'Empty bracket' : !completed ? 'Bracket has no winners set' : !pd.maxRound ? 'maxRound=0' : !champMatch ? `No champ match at r=${pd.maxRound} m=1` : !champMatch.w ? 'Champ match w=null' : '✓ OK';
+      const color = status.startsWith('✓') ? 'var(--green)' : 'var(--yellow)';
+      return `<tr><td style="font-size:.7rem;color:var(--muted)">${lgId}</td><td>${lg?.season||'?'}</td><td style="color:${color}">${status}</td><td>${total} (${completed} done)</td><td>${pd.maxRound}</td></tr>`;
+    });
+    el.innerHTML = `<div style="padding:24px">
+      <p style="color:var(--muted);margin-bottom:16px">No completed playoff data found. Diagnostic info:</p>
+      <div class="table-wrap"><table style="font-size:.8rem">
+        <thead><tr><th>League ID</th><th>Season</th><th>Status</th><th>Bracket entries</th><th>maxRound</th></tr></thead>
+        <tbody>${diagRows.length ? diagRows.join('') : '<tr><td colspan="5" style="color:var(--red);padding:12px">S.seasonChain is empty — league may not have loaded</td></tr>'}</tbody>
+      </table></div>
+      <p style="color:var(--muted);font-size:.75rem;margin-top:12px">Chain has ${chainIds.length} league(s). playoffData has ${Object.keys(S.playoffData).length} entries. If the 2025 season league ID is missing above, enter it directly in the League ID field and hit Load.</p>
+    </div>`;
+    return;
+  }
 
   // Year selector — consistent with draft history tab style
   const allYears = seasons.map(s => String(s.season)).sort((a, b) => b - a);
