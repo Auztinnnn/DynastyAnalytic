@@ -820,9 +820,10 @@ async function initLoad() {
 async function loadChain(startId) {
   S.seasonChain = []; S.leagues = {};
   S.draftHistory = {}; draftHistoryLoaded = false; draftHistoryLoading = false;
+  playoffsLoaded = false; playoffsLoading = false;
   let id = startId, iterations = 0;
 
-  while (id && iterations < 4) {
+  while (id && iterations < 6) {
     iterations++;
     const [league, users, rosters] = await Promise.all([
       api('/league/' + id),
@@ -859,7 +860,7 @@ async function loadChain(startId) {
     S.leagues[id] = { id, league, rosterMap, userMap, completedWeeks: [], playoffWeekStart: psStart, season: league.season };
     S.seasonChain.push(id);
 
-    if (league.status === 'pre_draft' && league.previous_league_id && iterations === 1) {
+    if (league.previous_league_id) {
       id = league.previous_league_id;
     } else { break; }
   }
