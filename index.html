@@ -5027,12 +5027,15 @@ async function loadPlayoffData() {
   playoffsLoading = false;
 }
 
-// ── Helper: scores for a bracket matchup ─────────────────────
-function poMatchScore(pd, round, matchupNum) {
+// ── Helper: scores for a playoff week ────────────────────────
+// Returns { roster_id: points } for the entire week.
+// We do NOT filter by matchup_id because Sleeper's matchup_id values
+// in weekly data don't reliably match the bracket's m field.
+// Callers already know b.w / b.l (roster IDs) so they can look up directly.
+function poMatchScore(pd, round) {
   const week = pd.playoffWeekStart + (round - 1);
-  const row  = (pd.matchupsByWeek[week] || []).filter(t => t.matchup_id === matchupNum);
   const out  = {};
-  row.forEach(t => { out[t.roster_id] = t.points || 0; });
+  (pd.matchupsByWeek[week] || []).forEach(t => { out[t.roster_id] = t.points || 0; });
   return out;
 }
 
@@ -5050,8 +5053,8 @@ function poSeasonResults() {
     if (!champMatch || !champMatch.w) continue;
     const rm  = pd.rosterMap;
     const get = id => rm[id] || { teamName: 'Team '+id, avatar: null, rosterId: id, ownerId: null };
-    const cSc = poMatchScore(pd, maxR, 1);
-    const tSc = thirdMatch ? poMatchScore(pd, maxR, 2) : {};
+    const cSc = poMatchScore(pd, maxR);
+    const tSc = thirdMatch ? poMatchScore(pd, maxR) : {};
     // Seed detection: teams in r=1 didn't have byes; teams skipping r=1 had byes
     const r1teams = new Set();
     pd.bracket.filter(b => b.r === 1).forEach(b => { if (b.t1) r1teams.add(b.t1); if (b.t2) r1teams.add(b.t2); });
@@ -5077,7 +5080,7 @@ function poComputeStats(pd) {
     const { r, m, t1, t2, w, l } = b;
     if (!w || !l) return;
     init(w); init(l);
-    const sc = poMatchScore(pd, r, m);
+    const sc = poMatchScore(pd, r);
     const sw = sc[w]||0, sl = sc[l]||0;
     stats[w].gp++; stats[w].w++; stats[w].pts+=sw; stats[w].scores.push(sw);
     stats[l].gp++; stats[l].l++; stats[l].pts+=sl; stats[l].scores.push(sl);
@@ -5122,7 +5125,7 @@ function poAllScores() {
     const rm = pd.rosterMap;
     pd.bracket.forEach(b => {
       const {r,m,t1,t2,w,l} = b; if(!w||!l) return;
-      const sc   = poMatchScore(pd,r,m);
+      const sc   = poMatchScore(pd,r);
       const isF  = r===pd.maxRound && m===1;
       [[t1||w,t2||l],[t2||l,t1||w]].slice(0,1); // de-dup via both sides
       [t1,t2].forEach(rid => {
@@ -5292,7 +5295,7 @@ function poBracketHistory(seasons) {
       const matchups = s.bracket.filter(b=>b.r===r && b.w && b.l).sort((a,b)=>a.m-b.m);
       const rm = s.rosterMap;
       const cards = matchups.map(b => {
-        const sc   = poMatchScore({matchupsByWeek:s.matchupsByWeek,playoffWeekStart:s.playoffWeekStart},r,b.m);
+        const sc   = poMatchScore({matchupsByWeek:s.matchupsByWeek,playoffWeekStart:s.playoffWeekStart},r);
         const wsc  = sc[b.w]||0, lsc = sc[b.l]||0;
         const wName= rm[b.w]?.teamName||'Team '+b.w;
         const lName= rm[b.l]?.teamName||'Team '+b.l;
