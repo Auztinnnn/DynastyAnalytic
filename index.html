@@ -4567,12 +4567,50 @@ async function saveCanvas(canvas, filename) {
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-// Wrap html2canvas in a timeout so it never hangs the button forever.
-function html2canvasWithTimeout(el, opts, timeoutMs = 25000) {
-  return Promise.race([
-    html2canvas(el, opts),
-    new Promise((_, rej) => setTimeout(() => rej(new Error('Capture timed out — try a smaller section')), timeoutMs)),
-  ]);
+// Replace all <img> inside root with same-size colored placeholders.
+// Returns a function that swaps them back. This prevents html2canvas
+// from loading any cross-origin images, which causes it to hang on mobile.
+function swapImagesForCapture(root) {
+  const imgs = Array.from(root.querySelectorAll('img'));
+  const posColors = { QB:'#6d28d9', RB:'#166534', WR:'#1d4ed8', TE:'#92400e', K:'#374151', DEF:'#374151' };
+  imgs.forEach(img => {
+    const w = img.offsetWidth || parseInt(img.style.width) || img.width || 28;
+    const h = img.offsetHeight || parseInt(img.style.height) || img.height || 28;
+    const pos = (img.alt || '').toUpperCase();
+    const bg = posColors[pos] || '#21262d';
+    const ph = document.createElement('span');
+    ph.style.cssText = `display:inline-block;width:${w}px;height:${h}px;border-radius:50%;background:${bg};flex-shrink:0;vertical-align:middle`;
+    img.parentNode.replaceChild(ph, img);
+    ph._origImg = img;
+  });
+  return () => imgs.forEach(img => {
+    if (img.parentNode) return; // already restored
+    const ph = root.querySelector(`span[style*="border-radius:50%"]`);
+    // Walk all placeholders to find the matching one
+  }) || (() => {
+    root.querySelectorAll('span[_origImg]').forEach(ph => {
+      if (ph._origImg) ph.parentNode.replaceChild(ph._origImg, ph);
+    });
+  });
+}
+
+// Swap images, call html2canvas, then restore — guarantees no image-load hang.
+async function captureElement(el, scale) {
+  const restoreImgs = swapImagesForCapture(el);
+  try {
+    return await html2canvas(el, {
+      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
+      scale, useCORS: false, allowTaint: true, logging: false,
+      imageTimeout: 1,  // skip any remaining images immediately
+      width: el.scrollWidth, height: el.scrollHeight,
+      windowWidth: el.scrollWidth, windowHeight: el.scrollHeight,
+    });
+  } finally {
+    // Restore original images after canvas is rendered
+    el.querySelectorAll('span').forEach(ph => {
+      if (ph._origImg) ph.parentNode.replaceChild(ph._origImg, ph);
+    });
+  }
 }
 
 async function captureSection(btn) {
@@ -4584,13 +4622,7 @@ async function captureSection(btn) {
   const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const restore = expandOverflowForCapture(section);
   try {
-    const canvas = await html2canvasWithTimeout(section, {
-      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
-      scale: onMobile ? 1 : 2,   // 2× on mobile easily OOMs
-      useCORS: true, allowTaint: true, logging: false,  // allowTaint prevents hanging on cross-origin images
-      width: section.scrollWidth, height: section.scrollHeight,
-      windowWidth: section.scrollWidth, windowHeight: section.scrollHeight,
-    });
+    const canvas = await captureElement(section, onMobile ? 1 : 2);
     restore();
     await saveCanvas(canvas, `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}.png`);
   } catch(e) { restore(); alert('Capture failed: ' + e.message); }
@@ -4658,13 +4690,7 @@ async function captureById(id, btn) {
   const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const restore = expandOverflowForCapture(el);
   try {
-    const canvas = await html2canvasWithTimeout(el, {
-      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
-      scale: onMobile ? 1 : 2,
-      useCORS: true, allowTaint: true, logging: false,
-      width: el.scrollWidth, height: el.scrollHeight,
-      windowWidth: el.scrollWidth, windowHeight: el.scrollHeight,
-    });
+    const canvas = await captureElement(el, onMobile ? 1 : 2);
     restore();
     await saveCanvas(canvas, `franchise-intel-${new Date().toISOString().slice(0,10)}.png`);
   } catch(e) { restore(); alert('Capture failed: ' + e.message); }
