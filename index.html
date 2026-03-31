@@ -1159,7 +1159,7 @@ const PICK_BUCKET_CFG = {
 // Team strength score per classification label (0–100)
 const CLASS_STRENGTH = {
   'Contender':         88,
-  'Fringe Contender':  64,
+  'Fringe':  64,
   'Productive Middle': 50,
   'Retool':            32,
   'Rebuild':           15,
@@ -1342,22 +1342,20 @@ function renderScheduleMatrix(league) {
   // Sort by actual wins descending (same as standings)
   const sorted = [...teams].sort((a,b) => (b.wins+b.ties*.5)-(a.wins+a.ties*.5) || b.fpts-a.fpts);
 
-  const abbr = name => name.length > 11 ? name.substring(0,11)+'…' : name;
-
   let html = `<div class="section">
     <div class="section-title">Schedule Swap Matrix
-      <span class="section-note">Row = team's actual scores &nbsp;·&nbsp; Column = schedule applied &nbsp;·&nbsp; <span style="color:var(--yellow)">■</span> = actual record &nbsp;·&nbsp; W+L = weeks played &nbsp;·&nbsp; head-to-head week uses league avg as substitute &nbsp;·&nbsp; <span style="color:var(--green)">▲ Best</span> = opponent you'd most want to face that week &nbsp;·&nbsp; <span style="color:var(--red)">▼ Worst</span> = toughest opponent</span>
+      <span class="section-note">Row = team's actual scores &nbsp;·&nbsp; Column = schedule applied &nbsp;·&nbsp; <span style="color:var(--yellow)">■</span> = actual record &nbsp;·&nbsp; W+L = weeks played &nbsp;·&nbsp; head-to-head week uses league avg as substitute</span>
     </div>
-    <div class="table-wrap">
-      <table style="font-size:.75rem">
+    <div class="table-wrap" style="overflow-x:visible">
+      <table style="font-size:.72rem;width:100%;table-layout:fixed">
         <thead><tr>
-          <th style="min-width:130px;position:sticky;left:0;background:var(--surface);z-index:2">Team</th>`;
+          <th style="width:110px;position:sticky;left:0;background:var(--surface);z-index:2;white-space:normal;word-break:break-word;text-align:left">Team</th>`;
 
   sorted.forEach(t => {
-    html += `<th style="text-align:center;min-width:68px;font-size:.68rem" title="${t.teamName}">${abbr(t.teamName)}</th>`;
+    html += `<th style="text-align:center;font-size:.63rem;white-space:normal;word-break:break-word;max-width:52px;padding:4px 2px" title="${t.teamName}">${t.teamName}</th>`;
   });
-  html += `<th style="text-align:center;color:var(--green);min-width:60px">Best</th>
-           <th style="text-align:center;color:var(--red);min-width:60px">Worst</th>
+  html += `<th style="text-align:center;color:var(--green);white-space:nowrap;width:44px">Best</th>
+           <th style="text-align:center;color:var(--red);white-space:nowrap;width:44px">Worst</th>
            </tr></thead><tbody>`;
 
   sorted.forEach(rowTeam => {
@@ -1372,7 +1370,7 @@ function renderScheduleMatrix(league) {
     if (bestW  === -1)        bestW  = 0;
     if (worstW === nGames+1)  worstW = 0;
 
-    html += `<tr><td class="bold" style="font-size:.8rem;position:sticky;left:0;background:var(--surface);z-index:1">${rowTeam.teamName}</td>`;
+    html += `<tr><td class="bold" style="font-size:.75rem;position:sticky;left:0;background:var(--surface);z-index:1;white-space:normal;word-break:break-word;width:110px;padding:5px 6px">${rowTeam.teamName}</td>`;
 
     let bestShown = false, worstShown = false;
     sorted.forEach(colTeam => {
@@ -1923,22 +1921,28 @@ function computeColStats(columns, statsMap, teams) {
 }
 
 // Relative colour helper (module-level so both new render functions can share it)
-function posColor(val, avg) {
+function posColor(val, avg, absoluteThreshold) {
   if (!avg || val == null) return '';
+  if (absoluteThreshold) {
+    const diff = val - avg;
+    if (diff >  1.0) return 'color:var(--green);font-weight:600';
+    if (diff < -1.0) return 'color:var(--red)';
+    return 'color:var(--muted)';
+  }
   const diff = (val - avg) / avg;
   if (diff >  0.1) return 'color:var(--green);font-weight:600';
   if (diff < -0.1) return 'color:var(--red)';
   return 'color:var(--muted)';
 }
 
-function buildAvgTableHtml(columns, statsMap, teams, leagueAvg, noteText) {
+function buildAvgTableHtml(columns, statsMap, teams, leagueAvg, noteText, absoluteThreshold) {
   let h = '';
   if (noteText) h += `<div class="section-note" style="margin-bottom:8px">${noteText}</div>`;
   h += `<div class="table-wrap"><table style="font-size:.8rem">
     <thead><tr>
       <th>Team</th>
-      ${columns.map(c=>`<th style="text-align:center">${c} Avg</th>`).join('')}
-      <th style="text-align:center">Total Avg</th>
+      ${columns.map(c=>`<th style="text-align:center">${c} Avg Pts</th>`).join('')}
+      <th style="text-align:center">Total Avg Pts</th>
     </tr></thead><tbody>`;
   teams.forEach(t => {
     const stats = statsMap[t.rosterId] || {};
@@ -1946,7 +1950,7 @@ function buildAvgTableHtml(columns, statsMap, teams, leagueAvg, noteText) {
     h += `<tr><td class="bold">${t.teamName}</td>`;
     columns.forEach(col => {
       const avg = stats[col]?.avg || 0;
-      h += `<td style="text-align:center;${posColor(avg, leagueAvg[col])}">${avg>0?fmtP(avg):'-'}</td>`;
+      h += `<td style="text-align:center;${posColor(avg, leagueAvg[col], absoluteThreshold)}">${avg>0?fmtP(avg):'-'}</td>`;
     });
     h += `<td style="text-align:center;font-weight:600">${fmtP(totalAvg)}</td></tr>`;
   });
@@ -1999,17 +2003,17 @@ function buildPosAvgInner(league) {
     const { result, columns } = computePositionStats(league);
     const { leagueAvg } = computeColStats(columns, result, teams);
     return buildAvgTableHtml(columns, result, teams, leagueAvg,
-      'Starters only · All players at each position combined per week · <span style="color:var(--green)">Green</span> = above league avg · <span style="color:var(--red)">Red</span> = below');
+      'Starters only · Avg fantasy points per week at each position · <span style="color:var(--green)">Green</span> = above league avg · <span style="color:var(--red)">Red</span> = below', false);
   } else if (posStatsView === 'slot') {
     const { result, slotLabels } = computeSlotStats(league);
     const { leagueAvg } = computeColStats(slotLabels, result, teams);
     return buildAvgTableHtml(slotLabels, result, teams, leagueAvg,
-      'Starters only · Per lineup slot (RB1 = higher-rostered RB, etc.) · <span style="color:var(--green)">Green</span> = above league avg · <span style="color:var(--red)">Red</span> = below');
+      'Starters only · Avg fantasy points per lineup slot (RB1 = higher-rostered RB, etc.) · <span style="color:var(--green)">Green</span> = 1+ pt above league avg · <span style="color:var(--red)">Red</span> = 1+ pt below', true);
   } else {
     const { result, columns } = computeBenchStats(league);
     const { leagueAvg } = computeColStats(columns, result, teams);
     return buildAvgTableHtml(columns, result, teams, leagueAvg,
-      'Bench players only (not started) · Avg pts per player-week by position · <span style="color:var(--green)">Green</span> = above league bench avg · <span style="color:var(--red)">Red</span> = below');
+      'Bench players only (not started) · Avg fantasy points per player-week by position · <span style="color:var(--green)">Green</span> = above league bench avg · <span style="color:var(--red)">Red</span> = below', false);
   }
 }
 
@@ -2065,7 +2069,7 @@ function renderPowerRankings() {
   let html='';
   if (!hasFC) html+=`<div class="warn-banner">FantasyCalc values could not be loaded. Rankings use recent scoring only.</div>`;
   html+=`<div class="section"><div class="section-title">Roster Value by Position ${tip('Stacked bar showing total FantasyCalc dynasty trade value for each team, broken out by position. Taller bar = more total dynasty capital. Does not reflect age or window — use Franchise Intel for that.')} <span class="section-note">${hasFC?'FantasyCalc dynasty values | '+fmtLabel:'Recent form only'}</span></div><div class="chart-wrap"><canvas id="powerChart"></canvas></div></div>`;
-  html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe Contender, Productive Middle, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
+  html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe, Productive Middle, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
   rankings.forEach((r,i)=>{
     const cls = mveClassMap[r.rosterId] || { label:'—', color:'#8b949e', bg:'rgba(148,163,184,.1)' };
     const tb=`<span class="tier-badge" style="background:${cls.bg};color:${cls.color}">${cls.label}</span>`;
@@ -2756,7 +2760,7 @@ function renderScoutingReport(ridA, ridB) {
   const profB = mveTeamProfile(ridB, league);
   const clsB  = profB?.classification?.label || 'Productive Middle';
   const isRebuildB   = clsB.includes('Rebuild') || clsB === 'Retool';
-  const isContenderB = clsB === 'Contender' || clsB === 'Fringe Contender';
+  const isContenderB = clsB === 'Contender' || clsB === 'Fringe';
 
   // Team A positional need (0=solid,1=moderate,2=weak,3=critical)
   function posNeedA(pos) {
@@ -2977,10 +2981,39 @@ function renderFantasyWrapped() {
     html += wCard('🚀','Best Single Week',`<div class="wrapped-title">Best Single Week</div><div class="wrapped-big">${fmtP(w.bestWeek.points)}</div><div class="wrapped-name">${rName(w.bestWeek.rosterId)}</div><div class="wrapped-stat">Week ${w.bestWeek.week}</div>`);
   }
 
-  html += wCard('💀','Worst Single Week',`<div class="wrapped-title">Worst Single Week</div><div class="wrapped-big" style="color:var(--red)">${w.worstWeek.points!==Infinity?fmtP(w.worstWeek.points):'-'}</div><div class="wrapped-name">${rName(w.worstWeek.rosterId)}</div><div class="wrapped-stat">Week ${w.worstWeek.week}</div>`);
-  if (w.bigBlowout.margin>0) html+=wCard('🔥','Biggest Blowout',`<div class="wrapped-title">Biggest Blowout</div><div class="wrapped-big">${fmt(w.bigBlowout.margin,2)}</div><div class="wrapped-name">${rName(w.bigBlowout.winId)}</div><div class="wrapped-stat">${fmtP(w.bigBlowout.winPts)} vs ${fmtP(w.bigBlowout.losePts)} — Wk ${w.bigBlowout.week}</div>`);
-  if (w.closest.margin<Infinity) html+=wCard('😰','Closest Game',`<div class="wrapped-title">Closest Game</div><div class="wrapped-big" style="color:var(--yellow)">${fmt(w.closest.margin,2)}</div><div class="wrapped-name">${rName(w.closest.winId)}</div><div class="wrapped-stat">${fmtP(w.closest.winPts)} vs ${fmtP(w.closest.losePts)} — Wk ${w.closest.week}</div>`);
-  if (benchId&&benchVal>0) html+=wCard('🪑','Most Bench Pts',`<div class="wrapped-title">Most Bench Pts</div><div class="wrapped-big">${fmtP(benchVal)}</div><div class="wrapped-name">${rName(benchId)}</div><div class="wrapped-stat">Left on bench all season</div>`);
+  html += wCard('💀','Worst Single Week',`<div class="wrapped-title">💀 Worst Single Week</div><div class="wrapped-big" style="color:var(--red)">${w.worstWeek.points!==Infinity?fmtP(w.worstWeek.points):'-'}</div><div class="wrapped-name">${rName(w.worstWeek.rosterId)}</div><div class="wrapped-stat">Week ${w.worstWeek.week} · cooked.</div>`);
+  if (w.bigBlowout.margin>0) html+=wCard('🔥','Biggest Blowout',`<div class="wrapped-title">🔥 Biggest Blowout</div><div class="wrapped-big">${fmt(w.bigBlowout.margin,2)}</div><div class="wrapped-name">${rName(w.bigBlowout.winId)}</div><div class="wrapped-stat">${fmtP(w.bigBlowout.winPts)} vs ${fmtP(w.bigBlowout.losePts)} — Wk ${w.bigBlowout.week} · not even close</div>`);
+  if (w.closest.margin<Infinity) html+=wCard('😰','Closest Game',`<div class="wrapped-title">😰 Closest Game</div><div class="wrapped-big" style="color:var(--yellow)">${fmt(w.closest.margin,2)}</div><div class="wrapped-name">${rName(w.closest.winId)}</div><div class="wrapped-stat">${fmtP(w.closest.winPts)} vs ${fmtP(w.closest.losePts)} — Wk ${w.closest.week} · audited by the ref</div>`);
+  if (benchId&&benchVal>0) html+=wCard('🪑','Most Bench Pts',`<div class="wrapped-title">🪑 Biggest Overthink</div><div class="wrapped-big">${fmtP(benchVal)}</div><div class="wrapped-name">${rName(benchId)}</div><div class="wrapped-stat">Left on bench all season · start your studs bro</div>`);
+
+  // ── Meme / shame awards ──────────────────────────────────────
+  const allTeams = Object.values(league.rosterMap);
+  // Lowest scorer overall
+  const lowestScorer = Object.entries(w.totals).sort((a,b)=>a[1]-b[1])[0];
+  if (lowestScorer) html+=wCard('🗑️','Dumpster Fire',`<div class="wrapped-title">🗑️ Dumpster Fire Award</div><div class="wrapped-name">${rName(lowestScorer[0])}</div><div class="wrapped-stat">${fmtP(lowestScorer[1])} total pts · last in scoring · GM of the year candidate</div>`);
+  // Most losses
+  const mostLosses = allTeams.slice().sort((a,b)=>b.losses-a.losses)[0];
+  if (mostLosses && mostLosses.losses > 0) html+=wCard('📉','Most Losses',`<div class="wrapped-title">📉 The Rebuilder</div><div class="wrapped-name">${mostLosses.teamName}</div><div class="wrapped-stat">${mostLosses.losses} losses · trust the process they said</div>`);
+  // Highest scorer who missed playoffs (worst wins)
+  const highScorerLowWins = Object.entries(w.totals)
+    .map(([id,pts])=>({ id, pts, wins: league.rosterMap[id]?.wins||0 }))
+    .sort((a,b)=>b.pts-a.pts).find(t=>t.wins < Math.ceil(allTeams.reduce((s,t2)=>s+t2.wins,0)/allTeams.length));
+  if (highScorerLowWins) html+=wCard('🍀','Schedule Victim',`<div class="wrapped-title">🍀 Schedule Victim</div><div class="wrapped-name">${rName(highScorerLowWins.id)}</div><div class="wrapped-stat">${fmtP(highScorerLowWins.pts)} pts, ${highScorerLowWins.wins} wins · ball don't lie tho</div>`);
+  // Unluckiest blowout loss (lost by most)
+  let biggestLoss = { margin: 0, id: null, week: null, pts: 0, oppPts: 0 };
+  league.completedWeeks.forEach(({ week, data }) => {
+    const pairs = {};
+    data.forEach(t => { if (t.matchup_id) { if (!pairs[t.matchup_id]) pairs[t.matchup_id]=[]; pairs[t.matchup_id].push(t); } });
+    Object.values(pairs).forEach(pair => {
+      if (pair.length!==2) return;
+      const [a,b] = pair;
+      const margin = Math.abs((a.points||0)-(b.points||0));
+      const loser = (a.points||0)<(b.points||0)?a:b;
+      const winner = loser===a?b:a;
+      if (margin > biggestLoss.margin) biggestLoss = { margin, id: loser.roster_id, week, pts: loser.points||0, oppPts: winner.points||0 };
+    });
+  });
+  if (biggestLoss.id) html+=wCard('💸','Worst Loss',`<div class="wrapped-title">💸 Most Embarrassing L</div><div class="wrapped-name">${rName(biggestLoss.id)}</div><div class="wrapped-stat">Lost by ${fmt(biggestLoss.margin,1)} pts · ${fmtP(biggestLoss.pts)} vs ${fmtP(biggestLoss.oppPts)} · Wk ${biggestLoss.week} · delete the app</div>`);
 
   html+=`</div><div class="section"><div class="section-title">Season Scoring Leaders</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Total Pts</th><th>Avg/Wk</th><th>Std Dev</th><th>Bench Pts</th></tr></thead><tbody>`;
   const nw=league.completedWeeks.length;
@@ -3322,7 +3355,7 @@ function mveTeamProfile(rosterId, league) {
 // ── CLASSIFICATION STYLES (single source of truth) ────────────
 const CLASS_STYLES = {
   'Contender':         { color:'#16a34a', bg:'rgba(22,163,74,.15)'   },
-  'Fringe Contender':  { color:'#d97706', bg:'rgba(217,119,6,.15)'   },
+  'Fringe':  { color:'#d97706', bg:'rgba(217,119,6,.15)'   },
   'Productive Middle': { color:'#0ea5e9', bg:'rgba(14,165,233,.12)'  },
   'Retool':            { color:'#6366f1', bg:'rgba(99,102,241,.15)'  },
   'Rebuild':           { color:'#a855f7', bg:'rgba(168,85,247,.15)'  },
@@ -3384,7 +3417,7 @@ function mveClassifyTeam(starterVal, weightedAge, pickVal, byPos, totalVal) {
   // FRINGE CONTENDER: real starter value, age gate, no floor, no fake strength
   if (!isFloor && !fakeStrength &&
       starterVal >= T.fringeContSV && weightedAge < T.fringeMaxAge && weakPos <= T.fringeMaxWeak)
-    return { label:'Fringe Contender',  window:'2–4 yr', ...CLASS_STYLES['Fringe Contender'] };
+    return { label:'Fringe',  window:'2–4 yr', ...CLASS_STYLES['Fringe'] };
 
   // INTENTIONAL REBUILD: young + picks accumulation + weak starters
   if (isYoung && hasBigPicks && starterVal < T.fringeContSV)
@@ -3468,7 +3501,7 @@ function mveClassifyTeams(profiles) {
     // FRINGE CONTENDER: real starter value + age gate + no floor + no fake (purely score-based)
     else if (!isFloor && !fakeStrength &&
              sv >= T.fringeContSV && age < T.fringeMaxAge && weakPos <= T.fringeMaxWeak) {
-      label = 'Fringe Contender'; window_ = '2–4 yr';
+      label = 'Fringe'; window_ = '2–4 yr';
     }
     // INTENTIONAL REBUILD: young + picks accumulation + not top half
     else if (isYoung && hasBigPicks && !isTopHalf) {
@@ -3519,7 +3552,7 @@ function mveClassifyTeams(profiles) {
     const keepC = new Set(contenderList.slice(0, maxContender).map(p => p.rosterId));
     result.forEach(p => {
       if (!keepC.has(p.rosterId) && p.classification.label === 'Contender') {
-        const dem = 'Fringe Contender';
+        const dem = 'Fringe';
         p.classification = { ...p.classification, label: dem, window:'2–4 yr', ...CLASS_STYLES[dem] };
         p.actions = mveTeamActions({ label: dem }, p.byPos, p.weightedAge, p.pickValue);
       }
@@ -3529,12 +3562,12 @@ function mveClassifyTeams(profiles) {
   // Cap Contender + Fringe combined at maxTopTierFraction (e.g. 3 of 10)
   const maxTopTier = Math.max(2, Math.ceil(n * T.maxTopTierFraction));
   const topTierList = result
-    .filter(p => ['Contender','Fringe Contender'].includes(p.classification.label))
+    .filter(p => ['Contender','Fringe'].includes(p.classification.label))
     .sort((a,b) => b.starterValue - a.starterValue);
   if (topTierList.length > maxTopTier) {
     const keepT = new Set(topTierList.slice(0, maxTopTier).map(p => p.rosterId));
     result.forEach(p => {
-      if (!keepT.has(p.rosterId) && ['Contender','Fringe Contender'].includes(p.classification.label)) {
+      if (!keepT.has(p.rosterId) && ['Contender','Fringe'].includes(p.classification.label)) {
         const dem = 'Productive Middle';
         p.classification = { ...p.classification, label: dem, window:'2–4 yr', ...CLASS_STYLES[dem] };
         p.actions = mveTeamActions({ label: dem }, p.byPos, p.weightedAge, p.pickValue);
@@ -3560,7 +3593,7 @@ function mveTeamActions(cls, byPos, weightedAge, pickValue) {
     acts.push('Liquidate aging veteran production into future picks or young talent');
     if (pickValue < 5000)  acts.push('Pick capital is low for rebuilding — sell veterans to build draft equity');
     acts.push('Prioritize players aged 25 or younger in every trade');
-  } else if (cls.label === 'Fringe Contender') {
+  } else if (cls.label === 'Fringe') {
     acts.push('Identify one targeted upgrade that pushes you into true Contender territory');
     acts.push('Do not trade away all draft capital — not elite enough to go all-in yet');
     if (!eliteQB)          acts.push('QB upgrade is the highest-leverage move on this roster');
@@ -3710,27 +3743,17 @@ function renderFranchiseIntel() {
 
   html += `</div></div>`; // close franchise-grid and franchise-snapshot
 
-  // ── Discord Summaries ─────────────────────────────────────────
-  html += `<div class="section">
-    <div class="section-title">Discord-Ready Summaries
-      <span class="section-note">Copy and paste into Discord · markdown formatted</span>
+  // ── Advanced / Debug ──────────────────────────────────────────
+  html += `<details style="margin-top:24px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+    <summary style="padding:9px 14px;font-size:.75rem;color:var(--muted);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;user-select:none;background:var(--surface2)">
+      <span style="font-size:.65rem;opacity:.6">▶</span> MVE Validation &amp; Stress Test
+      <span style="font-size:.68rem;opacity:.5;margin-left:4px">· sanity-checks for classification logic</span>
+    </summary>
+    <div style="padding:12px 14px">
+      <button class="btn" style="font-size:.75rem;padding:5px 12px;margin-bottom:12px;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="runValidation()">Run Validation</button>
+      <div id="validation-output"></div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn" style="font-size:.75rem;padding:5px 12px" onclick="showDiscordSummary('power')">Power Rankings</button>
-      <button class="btn" style="font-size:.75rem;padding:5px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="showDiscordSummary('targets')">Trade Targets</button>
-      <button class="btn" style="font-size:.75rem;padding:5px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="showDiscordSummary('movers')">Market Movers</button>
-    </div>
-    <div id="discord-output"></div>
-  </div>`;
-
-  // ── Validation ────────────────────────────────────────────────
-  html += `<div class="section">
-    <div class="section-title">MVE Validation &amp; Stress Test
-      <span class="section-note">Sanity-checks for classification distribution, pick values, and player logic</span>
-    </div>
-    <button class="btn" style="font-size:.75rem;padding:5px 12px;margin-bottom:12px;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="runValidation()">Run Validation</button>
-    <div id="validation-output"></div>
-  </div>`;
+  </details>`;
 
   document.getElementById('franchise-content').innerHTML = html;
 
@@ -4271,9 +4294,9 @@ function mveTradePartnerScore(myProf, theirProf) {
   const reasons = [], targetTypes = [];
   const myLabel   = myProf.classification.label;
   const thLabel   = theirProf.classification.label;
-  const iAmCont   = ['Contender','Fringe Contender'].includes(myLabel);
+  const iAmCont   = ['Contender','Fringe'].includes(myLabel);
   const iAmRebuild= myLabel.includes('Rebuild') || myLabel === 'Retool';
-  const theyCont  = ['Contender','Fringe Contender'].includes(thLabel);
+  const theyCont  = ['Contender','Fringe'].includes(thLabel);
   const theyRebuild= thLabel.includes('Rebuild') || thLabel === 'Retool';
 
   if (iAmCont && theyRebuild) {
@@ -4476,7 +4499,7 @@ function runMveValidation(league) {
   const classified= mveClassifyTeams(rawProfs);
   const n = classified.length;
   const nCont   = classified.filter(p=>p.classification.label==='Contender').length;
-  const nFringe = classified.filter(p=>p.classification.label==='Fringe Contender').length;
+  const nFringe = classified.filter(p=>p.classification.label==='Fringe').length;
   const nRebuild= classified.filter(p=>p.classification.label.includes('Rebuild')).length;
   const nMiddle = classified.filter(p=>p.classification.label==='Productive Middle').length;
 
@@ -4488,7 +4511,7 @@ function runMveValidation(league) {
 
   const bottom = [...classified].sort((a,b)=>a.starterValue-b.starterValue)[0];
   check('Bottom starter-value team not labeled Contender/Fringe',
-    !['Contender','Fringe Contender'].includes(bottom?.classification?.label||''),
+    !['Contender','Fringe'].includes(bottom?.classification?.label||''),
     `${bottom?.teamName}: ${bottom?.classification?.label}`);
 
   const top = classified.find(p=>p.classification.label==='Contender') ||
@@ -4516,64 +4539,29 @@ function runMveValidation(league) {
 
 // ── RENDER ALL ────────────────────────────────────────────────
 // ── SCREENSHOT / CAPTURE ──────────────────────────────────────
+// Opens a new browser tab with the section rendered natively.
+// Charts are copied as data-URL <img> tags. External images are removed.
+// On mobile: use your device's screenshot buttons to capture.
+// On desktop: use Ctrl+P to save as PDF.
 
-// Save a canvas as an image. On mobile uses the Web Share API so the
-// native share sheet opens (user can Save to Photos, Messages, etc.).
-// Falls back to a blob-URL download on desktop.
-async function saveCanvas(canvas, filename) {
-  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (onMobile && navigator.canShare) {
-    try {
-      const file = new File([blob], filename, { type: 'image/png' });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Dynasty Analytics' });
-        return;
-      }
-    } catch(e) {
-      if (e.name === 'AbortError') return;
-      console.warn('Share failed, falling back to download:', e);
-    }
-  }
-  const url = URL.createObjectURL(blob);
-  const a   = document.createElement('a');
-  a.download = filename; a.href = url;
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-}
-
-// Clone el into an off-screen container, expand all overflow in the clone,
-// copy live canvas pixel data into cloned canvases, strip cross-origin images,
-// then run html2canvas on the clone. Never touches the live DOM layout.
-async function captureElement(el, scale) {
-  // Measure full scroll dimensions before cloning
-  const fullW = el.scrollWidth;
-  const fullH = el.scrollHeight;
-
-  // Create an off-screen wrapper so html2canvas sees full dimensions
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = `position:fixed;top:0;left:-99999px;width:${fullW}px;overflow:visible;z-index:-999;pointer-events:none`;
-  document.body.appendChild(wrapper);
-
+function openCaptureWindow(el, filename) {
   const clone = el.cloneNode(true);
-  clone.style.cssText += `;width:${fullW}px;height:auto;overflow:visible`;
-  wrapper.appendChild(clone);
 
-  // Copy pixel data from every live canvas into its cloned counterpart
+  // Copy live Chart.js canvases to <img> data URLs in the clone
   const liveCanvases  = Array.from(el.querySelectorAll('canvas'));
   const cloneCanvases = Array.from(clone.querySelectorAll('canvas'));
   liveCanvases.forEach((src, i) => {
     const dst = cloneCanvases[i];
     if (!dst) return;
     try {
-      dst.width  = src.width;
-      dst.height = src.height;
-      dst.getContext('2d').drawImage(src, 0, 0);
-    } catch(e) { /* tainted canvas — leave blank */ }
+      const img = document.createElement('img');
+      img.src = src.toDataURL('image/png');
+      img.style.cssText = `width:${src.offsetWidth||src.width||300}px;height:${src.offsetHeight||src.height||200}px;max-width:100%;display:block`;
+      dst.parentNode.replaceChild(img, dst);
+    } catch(e) {}
   });
 
-  // Replace all <img> in the clone with solid-color placeholders
-  // so html2canvas never makes a network request
+  // Replace all remaining <img> (avatars/headshots) with small colored circles
   clone.querySelectorAll('img').forEach(img => {
     const w = img.offsetWidth  || parseInt(img.getAttribute('width'))  || 28;
     const h = img.offsetHeight || parseInt(img.getAttribute('height')) || 28;
@@ -4582,41 +4570,46 @@ async function captureElement(el, scale) {
     img.parentNode.replaceChild(ph, img);
   });
 
-  // Expand overflow on all descendants inside the clone
-  clone.querySelectorAll('*').forEach(child => {
-    const cs = window.getComputedStyle(child);
-    if (/auto|scroll|hidden/.test(cs.overflowX) || /auto|scroll|hidden/.test(cs.overflowY)) {
-      child.style.overflow = 'visible';
-      child.style.width    = child.scrollWidth  + 'px';
-      child.style.height   = child.scrollHeight + 'px';
-    }
-  });
+  // Strip capture buttons and tooltip markers from the clone
+  clone.querySelectorAll('.capture-btn, .tip').forEach(n => n.remove());
 
-  try {
-    return await html2canvas(clone, {
-      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117',
-      scale, useCORS: false, allowTaint: true, logging: false,
-      imageTimeout: 0,
-      width: clone.scrollWidth, height: clone.scrollHeight,
-      windowWidth: clone.scrollWidth, windowHeight: clone.scrollHeight,
-    });
-  } finally {
-    document.body.removeChild(wrapper);
-  }
+  // Inline the app's CSS so the new window looks identical
+  const css = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
+
+  const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dynasty Analytics — ${filename}</title>
+<style>
+${css}
+body { background:#0d1117; padding:12px 16px; margin:0; }
+#_cap_bar { position:sticky;top:0;background:#161b22;border-bottom:1px solid #21262d;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:999;font-size:.78rem;color:#8b949e; }
+#_cap_bar button { background:#58a6ff;color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:.78rem;font-weight:600;cursor:pointer; }
+#_cap_bar button.sec { background:var(--surface2);color:var(--text);border:1px solid var(--border); }
+@media print { #_cap_bar { display:none!important; } }
+</style>
+</head>
+<body>
+<div id="_cap_bar">
+  <span>📸 <strong>Mobile:</strong> use your device's screenshot buttons &nbsp;·&nbsp; <strong>Desktop:</strong> Ctrl+P → Save as PDF</span>
+  <button onclick="window.print()">🖨 Print</button>
+  <button class="sec" onclick="window.close()">✕ Close</button>
+</div>
+${clone.outerHTML}
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  if (!win) alert('Pop-up blocked — please allow pop-ups for this page and try again.');
 }
 
-async function captureSection(btn) {
+function captureSection(btn) {
   const section = btn.closest('.section') || btn.closest('.section-title')?.parentElement;
   if (!section) return;
-  if (typeof html2canvas === 'undefined') { alert('Screenshot library not loaded yet — try again in a moment.'); return; }
-  const orig = btn.textContent;
-  btn.textContent = '⏳'; btn.disabled = true;
-  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  try {
-    const canvas = await captureElement(section, onMobile ? 1 : 2);
-    await saveCanvas(canvas, `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}.png`);
-  } catch(e) { alert('Capture failed: ' + e.message); }
-  finally { btn.textContent = orig; btn.disabled = false; }
+  openCaptureWindow(section, `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}`);
 }
 
 function toggleFranchiseCard(rosterId, btn) {
@@ -4671,25 +4664,23 @@ function toggleFranchiseScreenshotMode(btn) {
   });
 }
 
-async function captureById(id, btn) {
+function captureById(id, btn) {
   const el = document.getElementById(id);
   if (!el) return;
-  if (typeof html2canvas === 'undefined') { alert('Screenshot library not loaded yet — try again in a moment.'); return; }
-  const orig = btn.textContent;
-  btn.textContent = '⏳'; btn.disabled = true;
-  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  try {
-    const canvas = await captureElement(el, onMobile ? 1 : 2);
-    await saveCanvas(canvas, `franchise-intel-${new Date().toISOString().slice(0,10)}.png`);
-  } catch(e) { alert('Capture failed: ' + e.message); }
-  finally { btn.textContent = orig; btn.disabled = false; }
+  openCaptureWindow(el, `franchise-intel-${new Date().toISOString().slice(0,10)}`);
 }
 
-// Inject a 📷 button into every .section-title that doesn't have one yet
+// Inject a 📷 button into every .section-title that doesn't have one yet.
+// Skips: titles inside a <details> element, titles with data-no-capture,
+// and the Pick-by-Pick section (it adds its own button conditionally).
 function addCaptureButtons() {
   document.querySelectorAll('.section-title').forEach(title => {
     if (title.querySelector('.capture-btn')) return;
-    const label = (title.childNodes[0]?.textContent || '').trim().slice(0, 20) || 'section';
+    if (title.closest('details')) return;
+    if (title.dataset.noCapture) return;
+    const text = (title.childNodes[0]?.textContent || '').trim();
+    if (text.startsWith('Pick-by-Pick')) return;
+    const label = text.slice(0, 20) || 'section';
     const btn = document.createElement('button');
     btn.className = 'capture-btn';
     btn.textContent = '📷 Save';
@@ -4802,7 +4793,7 @@ function renderDraftHistory() {
     } else if (value >= expected * 0.4) {
       grade = 'avg';  gradeColor = 'var(--yellow)'; gradeLabel = 'Below Avg';  letterGrade = 'C';
     } else {
-      grade = 'bust'; gradeColor = 'var(--red)';    gradeLabel = 'Bust';       letterGrade = 'D';
+      grade = 'bust'; gradeColor = 'var(--red)';    gradeLabel = '💀 Bust';    letterGrade = 'D';
     }
     return { ...p, pickNo, value, expected, grade, gradeColor, gradeLabel, letterGrade };
   }).sort((a, b) => a.pickNo - b.pickNo);
@@ -4926,7 +4917,16 @@ function renderDraftHistory() {
       <div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr))">${reportCards}</div>
     </div>
     <div class="section">
-      <div class="section-title">Pick-by-Pick Breakdown</div>
+      <div class="section-title">Pick-by-Pick Breakdown
+        ${selTeam !== 'ALL' ? '' : '<span style="font-size:.7rem;color:var(--muted);margin-left:8px;font-weight:400">— select a team to enable screenshot</span>'}
+        ${selTeam !== 'ALL' ? '<button class="capture-btn" onclick="captureSection(this)" data-label="draft-picks">📷 Save</button>' : ''}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:.72rem">
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(63,185,80,.15);color:var(--green);font-weight:700">▲ Hit</span><span style="color:var(--muted)">Current value ≥ 150% of expected at pick slot</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(88,166,255,.15);color:var(--accent);font-weight:700">Solid</span><span style="color:var(--muted)">≥ 80% of expected</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(210,153,34,.15);color:var(--yellow);font-weight:700">Below Avg</span><span style="color:var(--muted)">≥ 40% of expected</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(248,81,73,.15);color:var(--red);font-weight:700">💀 Bust</span><span style="color:var(--muted)">&lt; 40% of expected</span>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -5589,7 +5589,7 @@ function setTrendsPos(p) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { mobileNavClose(); return; }
   if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-  const map = {'1':'overview','2':'power','3':'players','4':'trade','5':'wrapped','6':'franchise','7':'league-intel','8':'draft-history','9':'trends'};
+  const map = {'1':'overview','2':'power','3':'players','4':'trade','5':'wrapped','6':'franchise','7':'league-intel','8':'draft-history','9':'trends','0':'playoffs'};
   if (map[e.key]) switchTab(map[e.key]);
 });
 
