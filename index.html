@@ -4561,73 +4561,25 @@ async function shareOrDownloadBlob(blob, filename) {
 }
 
 // ── Render any DOM element to a full-size PNG blob ────────────
-// Uses SVG <foreignObject> to render the element at its natural
-// scrollWidth × scrollHeight — no html2canvas, no external deps.
+// Uses html2canvas with full scrollWidth so wide tables aren't clipped.
 async function captureElementAsPng(el) {
-  const clone = el.cloneNode(true);
-
-  // Canvas → inline img data URL
-  const liveCanvases = Array.from(el.querySelectorAll('canvas'));
-  Array.from(clone.querySelectorAll('canvas')).forEach((dst, i) => {
-    const src = liveCanvases[i];
-    if (!src) return;
-    try {
-      const img = document.createElement('img');
-      img.src = src.toDataURL('image/png');
-      img.style.cssText = `width:100%;max-width:${src.width}px;height:auto;display:block`;
-      dst.parentNode.replaceChild(img, dst);
-    } catch(e) {}
+  if (typeof html2canvas === 'undefined') throw new Error('html2canvas not loaded');
+  let fullW = el.scrollWidth;
+  el.querySelectorAll('table').forEach(t => { fullW = Math.max(fullW, t.scrollWidth + 32); });
+  const fullH = el.scrollHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const canvas = await html2canvas(el, {
+    backgroundColor: '#0d1117',
+    scale: dpr,
+    useCORS: true,
+    logging: false,
+    width: fullW,
+    height: fullH,
+    windowWidth: fullW,
+    scrollX: 0,
+    scrollY: 0
   });
-
-  // External images → neutral placeholder (avoids CORS taint)
-  clone.querySelectorAll('img').forEach(img => {
-    const w = img.offsetWidth || 28, h = img.offsetHeight || 28;
-    const ph = document.createElement('span');
-    ph.style.cssText = `display:inline-block;width:${w}px;height:${h}px;border-radius:50%;background:#21262d;flex-shrink:0;vertical-align:middle`;
-    img.parentNode.replaceChild(ph, img);
-  });
-
-  clone.querySelectorAll('.capture-btn,.chart-share-btn,.tip,.fc-hide-btn').forEach(n => n.remove());
-
-  // Full content dimensions: tables can overflow their wrapper
-  let w = el.scrollWidth;
-  el.querySelectorAll('table').forEach(t => { w = Math.max(w, t.scrollWidth + 32); });
-  const h = el.scrollHeight;
-
-  const css = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
-
-  const inner = `<div xmlns="http://www.w3.org/1999/xhtml"
-    style="width:${w}px;min-height:${h}px;background:#0d1117;padding:16px;box-sizing:border-box;overflow:visible">
-    <style>${css}
-      .table-wrap{overflow:visible!important;width:auto!important}
-      table{white-space:nowrap}
-      .chart-wrap img,.chart-wrap canvas{max-height:none!important}
-    </style>
-    ${clone.outerHTML}
-  </div>`;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-    <foreignObject width="${w}" height="${h}">${inner}</foreignObject>
-  </svg>`;
-
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const canvas = document.createElement('canvas');
-      canvas.width  = w * dpr;
-      canvas.height = h * dpr;
-      const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
-      ctx.drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(svgUrl);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
-    };
-    img.onerror = e => { URL.revokeObjectURL(svgUrl); reject(e); };
-    img.src = svgUrl;
-  });
+  return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
 }
 
 // ── Share a Chart.js canvas directly as a PNG ─────────────────
