@@ -615,6 +615,255 @@
     .depth-strong { color: var(--green);  font-size: .7rem; font-weight: 600; }
     @media (max-width: 1050px) { .pos-room-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 640px)  { .pos-room-grid { grid-template-columns: 1fr; } }
+
+    /* ══════════════════════════════════════════════════════════
+       FRONT OFFICE — BRAND VISUAL SYSTEM
+       Layered on top of base styles. No layout changes.
+    ══════════════════════════════════════════════════════════ */
+
+    /* ── Updated color tokens ─────────────────────────────── */
+    :root {
+      --bg:       #0B0E11;
+      --surface:  #111827;
+      --surface2: #192338;
+      --border:   #1e2d42;
+      --text:     #e8edf3;
+      --muted:    #7a8a9e;
+      --accent:   #4a9eff;
+      --yellow:   #E8B63A;
+      /* Brand additions */
+      --accent-deep:  #2870cc;
+      --gold:         #E8B63A;
+      --gold-dim:     rgba(232,182,58,.12);
+      --teal-line:    linear-gradient(90deg, transparent, rgba(74,158,255,.55), transparent);
+      --card-sheen:   linear-gradient(180deg, rgba(74,158,255,.045) 0%, transparent 55%);
+      --btn-grad:     linear-gradient(135deg, #4a9eff 0%, #2870cc 100%);
+      --header-grad:  linear-gradient(180deg, #192338 0%, #111827 100%);
+    }
+
+    /* ── Global base ──────────────────────────────────────── */
+    body { background: var(--bg); }
+
+    /* ── Sidebar: deeper with subtle top gradient ─────────── */
+    header {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-right-color: #1e2d42;
+    }
+
+    /* ── Nav: refined active + hover states ──────────────── */
+    nav button { transition: color .15s, background .15s, border-color .15s; }
+    nav button:hover { background: rgba(74,158,255,.06); color: var(--text); }
+    nav button.active {
+      color: var(--accent);
+      border-left-color: var(--accent);
+      background: linear-gradient(90deg, rgba(74,158,255,.12), rgba(74,158,255,.04));
+    }
+
+    /* ── Load button: teal→blue gradient ─────────────────── */
+    .btn {
+      background: var(--btn-grad);
+      color: #fff;
+      letter-spacing: .03em;
+      box-shadow: 0 2px 8px rgba(40,112,204,.3);
+      transition: opacity .15s, box-shadow .15s;
+    }
+    .btn:hover { opacity: 1; box-shadow: 0 4px 16px rgba(40,112,204,.45); filter: brightness(1.08); }
+
+    /* ── Metric cards: top accent line + subtle sheen ─────── */
+    .card {
+      background: var(--surface);
+      border-color: var(--border);
+      position: relative;
+      overflow: hidden;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--teal-line);
+      opacity: .9;
+    }
+    .card::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: var(--card-sheen);
+      pointer-events: none;
+    }
+    .card:hover { border-color: rgba(74,158,255,.35); box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+    .card-value { color: var(--text); }
+    .card-label { letter-spacing: .07em; }
+
+    /* ── Section titles: left accent strip ───────────────── */
+    .section-title {
+      padding-left: 10px;
+      border-left: 3px solid;
+      border-image: linear-gradient(180deg, #4a9eff, #2870cc) 1;
+      margin-bottom: 14px;
+    }
+
+    /* ── Table: elevated header + refined rows ────────────── */
+    .table-wrap {
+      background: var(--surface);
+      border-color: var(--border);
+      border-radius: 10px;
+    }
+    thead th {
+      background: linear-gradient(180deg, #192338 0%, #162030 100%);
+      border-bottom-color: #1e2d42;
+      color: #5f7a99;
+      letter-spacing: .06em;
+    }
+    thead th:hover { color: var(--text); }
+    tbody tr { border-bottom-color: rgba(30,45,66,.8); }
+    tbody tr:hover { background: rgba(74,158,255,.05); }
+    tbody tr:first-child td { color: var(--text); }
+
+    /* ── Chart containers: better frame ──────────────────── */
+    .chart-wrap {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-wrap::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--teal-line);
+    }
+
+    /* ── Franchise cards: elevated module feel ────────────── */
+    .franchise-card {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+      transition: border-color .18s, box-shadow .18s;
+      position: relative; overflow: hidden;
+    }
+    .franchise-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--teal-line); opacity: .7;
+    }
+    .franchise-card:hover {
+      border-color: rgba(74,158,255,.3);
+      box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    }
+
+    /* ── Tier / archetype badges: depth + gradient fills ──── */
+    .tier-badge, .archetype-badge {
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+      letter-spacing: .05em;
+    }
+
+    /* ── Trade panels: distinct side contrast ─────────────── */
+    .trade-panel {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+    }
+    .trade-panel-header {
+      background: rgba(30,45,66,.5);
+      border-bottom-color: var(--border);
+    }
+    .trade-summary {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+    }
+    .trade-verdict {
+      border: 1px solid;
+      font-size: .9rem;
+      letter-spacing: .02em;
+    }
+    .verdict-fair {
+      background: rgba(63,185,80,.1);
+      border-color: rgba(63,185,80,.25);
+      box-shadow: 0 0 20px rgba(63,185,80,.06);
+    }
+    .verdict-a {
+      background: rgba(74,158,255,.1);
+      border-color: rgba(74,158,255,.25);
+      box-shadow: 0 0 20px rgba(74,158,255,.07);
+    }
+    .verdict-b {
+      background: rgba(232,182,58,.1);
+      border-color: rgba(232,182,58,.25);
+      box-shadow: 0 0 20px rgba(232,182,58,.06);
+    }
+    .trade-player-chip {
+      background: rgba(25,35,56,.8);
+      border: 1px solid var(--border);
+    }
+    .pick-chip {
+      border-color: rgba(232,182,58,.3);
+      background: rgba(232,182,58,.07);
+    }
+
+    /* ── Rank num: gold/silver/bronze refined ─────────────── */
+    .rank-num.gold   { background: linear-gradient(135deg,#E8B63A,#c49020); color:#0B0E11; box-shadow:0 0 8px rgba(232,182,58,.3); }
+    .rank-num.silver { background: linear-gradient(135deg,#9eaabc,#6e7f96); color:#0B0E11; }
+    .rank-num.bronze { background: linear-gradient(135deg,#c47a3a,#9a5a22); color:#fff; }
+
+    /* ── Signal / buy-sell badges: inner highlight ────────── */
+    .signal-buy, .signal-sell, .signal-hold, .signal-stash {
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.1);
+    }
+    .signal-buy  { background: rgba(63,185,80,.12); }
+    .signal-sell { background: rgba(248,81,73,.12); }
+    .signal-hold { background: var(--gold-dim); border-color: rgba(232,182,58,.3); color: var(--gold); }
+    .signal-stash{ background: rgba(163,113,247,.12); }
+
+    /* ── Season buttons: cleaner active state ─────────────── */
+    .season-btn { background: var(--surface2); border-color: var(--border); }
+    .season-btn.active {
+      background: linear-gradient(135deg, rgba(74,158,255,.18), rgba(40,112,204,.1));
+      border-color: rgba(74,158,255,.5);
+      color: var(--accent);
+      box-shadow: 0 0 12px rgba(74,158,255,.12);
+    }
+
+    /* ── Mobile topbar: match sidebar gradient ────────────── */
+    #mobile-topbar {
+      background: linear-gradient(90deg, #192338 0%, #111827 100%);
+      border-bottom-color: var(--border);
+    }
+
+    /* ── Tooltips: slightly more premium ─────────────────── */
+    #global-tip {
+      background: #192338;
+      border-color: #1e2d42;
+      box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    }
+
+    /* ── Wrapped cards ────────────────────────────────────── */
+    .wrapped-card {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+    }
+    .wrapped-big { color: var(--accent); }
+
+    /* ── Player cards ─────────────────────────────────────── */
+    .player-card {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+    }
+    .player-card:hover { border-color: rgba(74,158,255,.4); box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+
+    /* ── Bracket / playoffs cards ─────────────────────────── */
+    .bracket-match {
+      background: var(--surface2);
+      border-color: var(--border);
+    }
+    .po-record-card, .what-wins-card {
+      background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      border-color: var(--border);
+    }
+
+    /* ── Bar fills: gradient ──────────────────────────────── */
+    .bar-fill { background: linear-gradient(90deg, #4a9eff, #2870cc); }
+    .partner-score-fill { background: linear-gradient(90deg, #4a9eff, #2870cc); }
+
+    /* ── Depth quality labels: slightly stronger ──────────── */
+    .depth-strong { color: #92B67B; }
+    .depth-solid  { color: var(--gold); }
+    .depth-weak   { color: #e05a52; }
   </style>
 </head>
 <body>
