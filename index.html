@@ -17,6 +17,13 @@
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
     /* Prevent iOS double-tap zoom on all interactive elements */
     button, a, select, input, [onclick] { touch-action: manipulation; }
+    /* Stable text size on orientation change */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    /* Tap feedback for interactive cards */
+    .franchise-card, .wrapped-card, .player-card { transition: transform .12s ease, opacity .1s; }
+    .franchise-card:active, .wrapped-card:active, .player-card:active { transform: scale(.985); opacity: .88; }
+    .card { transition: background .12s; }
+    .card:active { background: var(--surface2); }
 
     /* SIDEBAR */
     header { position: fixed; left: 0; top: 0; width: 214px; height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 200; overflow: hidden; }
@@ -565,6 +572,25 @@
       .franchise-card-avatar { width: 32px; height: 32px; }
       .franchise-card-sub { font-size: .65rem; }
       .player-grid { grid-template-columns: 1fr; }
+
+      /* ── Mobile quality of life ──────────────────────────── */
+      /* Topbar: subtle elevation shadow */
+      #mobile-topbar { box-shadow: 0 2px 14px rgba(0,0,0,.45); }
+      /* Touch targets: 44px minimum */
+      #nav-hamburger { min-width: 44px; min-height: 44px; }
+      #nav-close-btn { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border-radius: 6px; }
+      nav button { min-height: 44px; }
+      .btn { min-height: 44px; font-size: .88rem; }
+      /* iOS: font-size ≥ 16px prevents viewport zoom on input focus */
+      .league-controls input { font-size: 16px; min-height: 44px; padding: 0 10px; }
+      /* Momentum scroll inside nav drawer */
+      nav { -webkit-overflow-scrolling: touch; }
+      /* Safe area: iPhone home indicator gap */
+      main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
+      /* Horizontal table scroll stays contained — no accidental back-nav swipe */
+      .table-wrap { overscroll-behavior-x: contain; }
+      /* Capture/save buttons: slightly easier to tap */
+      .capture-btn { padding: 5px 10px; min-height: 32px; font-size: .72rem; }
     }
 
     /* ── SMALL PHONES ≤ 480px ─────────────────────────────────── */
