@@ -56,7 +56,7 @@
     .section { margin-bottom: 32px; }
     .section-title { font-size: .95rem; font-weight: 600; color: var(--text); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .section-note { font-size: .75rem; color: var(--muted); margin-left: auto; font-weight: 400; }
-    .capture-btn { cursor:pointer; background:transparent; border:1px solid var(--border); border-radius:4px; color:var(--muted); font-size:.7rem; padding:2px 8px; white-space:nowrap; flex-shrink:0; transition:color .15s,border-color .15s; line-height:1.6; }
+    .capture-btn { cursor:pointer; background:transparent; border:1px solid var(--border); border-radius:4px; color:var(--muted); font-size:.7rem; padding:2px 8px; white-space:nowrap; flex-shrink:0; transition:color .15s,border-color .15s; line-height:1.6; touch-action:manipulation; -webkit-tap-highlight-color:transparent; user-select:none; }
     .capture-btn:hover { color:var(--text); border-color:var(--muted); }
     .capture-btn:disabled { opacity:.5; cursor:wait; }
 
@@ -246,15 +246,15 @@
 
     /* WRAPPED */
     .wrapped-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 24px; }
-    .wrapped-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; overflow: hidden; }
-    .wrapped-card::before { content: attr(data-emoji); position: absolute; top: -6px; right: 10px; font-size: 3rem; opacity: .1; }
+    .wrapped-card { background: var(--surface); border: 1px solid var(--border); border-top: 2px solid rgba(88,166,255,.45); border-radius: 12px; padding: 18px; position: relative; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.15); }
+    .wrapped-card::before { content: attr(data-emoji); position: absolute; top: -4px; right: 10px; font-size: 3.5rem; opacity: .22; pointer-events: none; }
     .wrapped-card.has-hs { display: flex; gap: 14px; align-items: center; }
     .wrapped-card.has-hs::before { display: none; }
     .wrapped-card-body { flex: 1; }
-    .wrapped-title { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 7px; }
+    .wrapped-title { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: rgba(88,166,255,.75); margin-bottom: 7px; font-weight: 600; }
     .wrapped-name { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 3px; }
     .wrapped-stat { font-size: .82rem; color: var(--muted); }
-    .wrapped-big { font-size: 1.8rem; font-weight: 800; color: var(--accent); margin-bottom: 3px; }
+    .wrapped-big { font-size: 1.8rem; font-weight: 800; color: var(--accent); margin-bottom: 3px; letter-spacing: -.01em; }
 
     /* WEEK TABLE */
     .week-table td, .week-table th { padding: 7px 9px; font-size: .78rem; }
@@ -557,6 +557,7 @@
 
       /* Franchise & player grids */
       .franchise-grid { grid-template-columns: 1fr; gap: 10px; }
+      .franchise-grid.screenshot-mode { grid-template-columns: repeat(2,1fr); }
       .franchise-card { padding: 12px; gap: 8px; }
       .player-grid { grid-template-columns: 1fr; }
     }
@@ -838,10 +839,12 @@
 
     /* ── Wrapped cards ────────────────────────────────────── */
     .wrapped-card {
-      background: linear-gradient(180deg, #192338 0%, #111827 100%);
-      border-color: var(--border);
+      background: linear-gradient(135deg, #1a2840 0%, #0f1923 100%);
+      border-color: rgba(74,158,255,.2);
+      border-top-color: rgba(74,158,255,.65);
+      box-shadow: 0 4px 20px rgba(0,0,0,.5), inset 0 1px 0 rgba(74,158,255,.08);
     }
-    .wrapped-big { color: var(--accent); }
+    .wrapped-big { color: #58a6ff; text-shadow: 0 0 20px rgba(88,166,255,.3); }
 
     /* ── Player cards ─────────────────────────────────────── */
     .player-card {
