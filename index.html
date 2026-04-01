@@ -4645,10 +4645,29 @@ async function shareChart(btn) {
   finally { btn.textContent = orig; btn.disabled = false; }
 }
 
-// ── Open full-width table/section view in a new tab ────────────
-// Charts are converted to data-URL <img>s. Tables have all overflow
-// removed so nothing is clipped. Use device screenshot or Ctrl+P.
-function openCaptureWindow(el, filename) {
+// ── Open full-width table/section view ────────────────────────
+// Desktop: tries html2canvas PNG download first, falls back to HTML download.
+// Mobile: shows a full-screen overlay (no info bar) for device screenshot.
+async function openCaptureWindow(el, filename) {
+  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  // Desktop: try html2canvas → direct PNG download (no overlay needed)
+  if (!onMobile && typeof html2canvas !== 'undefined') {
+    try {
+      const fullW = Math.max(el.scrollWidth, el.offsetWidth);
+      const fullH = Math.max(el.scrollHeight, el.offsetHeight);
+      const canvas = await html2canvas(el, {
+        backgroundColor: '#0d1117', scale: 2, useCORS: true, logging: false,
+        width: fullW, height: fullH,
+        windowWidth: fullW, scrollX: 0, scrollY: 0
+      });
+      const blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
+      await shareOrDownloadBlob(blob, filename + '.png');
+      return;
+    } catch(e) { /* fall through to HTML download */ }
+  }
+
+  // Build self-contained HTML clone
   const clone = el.cloneNode(true);
 
   // Copy live Chart.js canvases to full-res <img> data URLs
@@ -4674,7 +4693,6 @@ function openCaptureWindow(el, filename) {
     img.parentNode.replaceChild(ph, img);
   });
 
-  // Strip capture buttons and tooltips
   clone.querySelectorAll('.capture-btn, .tip').forEach(n => n.remove());
 
   const css = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
@@ -4686,33 +4704,42 @@ function openCaptureWindow(el, filename) {
 <title>Dynasty Analytics — ${filename}</title>
 <style>
 ${css}
-/* Full-width render — remove all overflow clipping so tables never cut off */
 body { background:#0d1117; padding:12px 16px; margin:0; width:max-content; min-width:100vw; }
 .table-wrap { overflow:visible !important; width:auto !important; }
 table { width:auto !important; white-space:nowrap; }
 .chart-wrap canvas, .chart-wrap img { max-height:none !important; }
 main, header, #mobile-topbar { display:none !important; }
-#_cap_bar { position:sticky;top:0;background:#161b22;border-bottom:1px solid #21262d;padding:8px 12px;
-  display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:999;font-size:.78rem;color:#8b949e;width:100vw;box-sizing:border-box; }
-#_cap_bar button { background:#58a6ff;color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:.78rem;font-weight:600;cursor:pointer; }
-#_cap_bar button.sec { background:#1c2333;color:#e6edf3;border:1px solid #21262d; }
-@media print { #_cap_bar { display:none !important; } body { width:auto; } table { white-space:normal; } }
+@media print { body { width:auto; } table { white-space:normal; } }
 </style>
 </head>
-<body>
-<div id="_cap_bar">
-  <span>📸 <strong>Mobile:</strong> screenshot with your device &nbsp;·&nbsp; <strong>Desktop:</strong> Ctrl+P → Save as PDF / image</span>
-  <button onclick="window.print()">🖨 Print / Save PDF</button>
-  <button class="sec" onclick="window.close()">✕ Close</button>
-</div>
-${clone.outerHTML}
-</body></html>`;
+<body>${clone.outerHTML}</body></html>`;
 
   const blob = new Blob([html], { type: 'text/html' });
   const url  = URL.createObjectURL(blob);
-  const win  = window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 15000);
-  if (!win) alert('Pop-up blocked — please allow pop-ups for this page and try again.');
+
+  if (!onMobile) {
+    // Desktop fallback: download as HTML file
+    const a = Object.assign(document.createElement('a'), { download: filename + '.html', href: url });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+
+  // Mobile: full-screen overlay for device screenshot (no info bar)
+  const overlay = document.createElement('div');
+  overlay.id = '_cap_overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0d1117;display:flex;flex-direction:column';
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕ Close';
+  closeBtn.style.cssText = 'position:fixed;bottom:20px;right:16px;z-index:100000;background:rgba(88,166,255,.95);color:#000;border:none;border-radius:20px;padding:10px 22px;font-size:.9rem;font-weight:700;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.6)';
+  closeBtn.onclick = () => { overlay.remove(); URL.revokeObjectURL(url); };
+  const iframe = document.createElement('iframe');
+  iframe.src = url;
+  iframe.style.cssText = 'flex:1;border:none;width:100%';
+  overlay.appendChild(iframe);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 async function captureSection(btn) {
