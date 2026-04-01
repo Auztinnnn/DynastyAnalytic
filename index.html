@@ -4561,25 +4561,49 @@ async function shareOrDownloadBlob(blob, filename) {
 }
 
 // ── Render any DOM element to a full-size PNG blob ────────────
-// Uses html2canvas with full scrollWidth so wide tables aren't clipped.
+// Temporarily expands the element to its full content width so html2canvas
+// captures the whole table rather than the clipped mobile viewport width.
 async function captureElementAsPng(el) {
   if (typeof html2canvas === 'undefined') throw new Error('html2canvas not loaded');
+
+  // Measure full content width across all inner tables
   let fullW = el.scrollWidth;
   el.querySelectorAll('table').forEach(t => { fullW = Math.max(fullW, t.scrollWidth + 32); });
+
+  // Temporarily expand the element and any scrollable table wrappers
+  const elSaved = el.getAttribute('style') || '';
+  el.style.width    = fullW + 'px';
+  el.style.maxWidth = 'none';
+  el.style.overflow = 'visible';
+
+  const tableWraps = Array.from(el.querySelectorAll('.table-wrap'));
+  const twSaved = tableWraps.map(tw => tw.getAttribute('style') || '');
+  tableWraps.forEach(tw => {
+    tw.style.overflow = 'visible';
+    tw.style.width    = 'auto';
+    tw.style.maxWidth = 'none';
+  });
+
   const fullH = el.scrollHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const canvas = await html2canvas(el, {
-    backgroundColor: '#0d1117',
-    scale: dpr,
-    useCORS: true,
-    logging: false,
-    width: fullW,
-    height: fullH,
-    windowWidth: fullW,
-    scrollX: 0,
-    scrollY: 0
-  });
-  return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
+
+  try {
+    const canvas = await html2canvas(el, {
+      backgroundColor: '#0d1117',
+      scale: dpr,
+      useCORS: true,
+      logging: false,
+      width: fullW,
+      height: fullH,
+      scrollX: 0,
+      scrollY: 0
+    });
+    return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
+  } finally {
+    // Restore original styles
+    el.setAttribute('style', elSaved);
+    tableWraps.forEach((tw, i) => tw.setAttribute('style', twSaved[i]));
+  }
 }
 
 // ── Share a Chart.js canvas directly as a PNG ─────────────────
