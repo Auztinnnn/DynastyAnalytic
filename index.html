@@ -262,8 +262,8 @@
     .week-low { color: var(--red); }
 
     /* SEASON SWITCHER */
-    .season-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 3px 11px; font-size: .78rem; cursor: pointer; }
-    .season-btn.active { background: rgba(88,166,255,.15); border-color: var(--accent); color: var(--accent); }
+    .season-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 8px 16px; font-size: .82rem; cursor: pointer; min-height: 44px; touch-action: manipulation; font-weight: 500; transition: background .15s, color .15s, border-color .15s; }
+    .season-btn.active { background: rgba(88,166,255,.15); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 
     /* WARN */
     .warn-banner { background: rgba(210,153,34,.1); border: 1px solid rgba(210,153,34,.3); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: .82rem; color: var(--yellow); }
@@ -575,7 +575,7 @@
 
       .section { margin-bottom: 16px; }
       .section-title { font-size: .82rem; gap: 5px; }
-      .section-note { font-size: .66rem; }
+      .section-note { font-size: .66rem; margin-left: 0; width: 100%; }
 
       .chart-wrap { padding: 8px; }
       .chart-wrap canvas { max-height: 170px; }
@@ -5624,7 +5624,7 @@ function _renderTrendsContent(el) {
       <span style="font-size:.78rem;color:var(--muted)">Lookback:</span>
       <div style="display:flex;gap:4px">${lbBtns}</div>
       <div style="display:flex;gap:5px;margin-left:8px">${posBtns}</div>
-      <span style="font-size:.72rem;color:var(--muted);margin-left:auto">Data from Sleeper global trends · ${lbLabel} window</span>
+      <span style="font-size:.72rem;color:var(--muted);flex-basis:100%;margin-top:2px">Data from Sleeper global trends · ${lbLabel} window</span>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
       ${tbl('Trending Adds', adds, 'adds', 'most added across all Sleeper leagues')}
