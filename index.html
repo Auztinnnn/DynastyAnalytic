@@ -608,7 +608,7 @@
     .pos-room-grid .table-wrap { overflow: visible; }
     .pos-room-grid table { table-layout: auto; width: 100%; }
     .pos-room-grid td, .pos-room-grid th { white-space: normal; word-break: break-word; }
-    .depth-thin   { color: var(--red);    font-size: .7rem; font-weight: 600; }
+    .depth-weak   { color: var(--red);    font-size: .7rem; font-weight: 600; }
     .depth-solid  { color: var(--yellow); font-size: .7rem; font-weight: 600; }
     .depth-strong { color: var(--green);  font-size: .7rem; font-weight: 600; }
     @media (max-width: 1050px) { .pos-room-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -3831,13 +3831,13 @@ function computePositionalRooms(profiles) {
     thresholds[pos] = byPos.length >= n ? byPos[n - 1].value : 0;
   });
 
-  return profiles.map(p => {
+  // Pass 1 — compute raw scores for every profile and position
+  const allRaw = profiles.map(p => {
     const rooms = {};
     ['QB','RB','WR','TE'].forEach(pos => {
       const { count, weights } = SLOTS[pos];
       const minVal = thresholds[pos];
 
-      // Filter to relevant players only, sorted by MVE value desc
       const relevant = (p.byPos[pos] || [])
         .filter(pl => (pl.fcValue || 0) >= minVal)
         .sort((a,b) => b.neutral - a.neutral);
@@ -3845,10 +3845,9 @@ function computePositionalRooms(profiles) {
       const core  = relevant.slice(0, count);
       const extra = relevant.slice(count);
 
-      // Weighted room score
       let score = core.reduce((s, pl, i) => s + (pl.neutral || 0) * weights[i], 0);
 
-      // Depth bonus: up to +10% from meaningful extra depth
+      // Small depth bonus (up to +10%) for extra dynasty-relevant players
       if (extra.length > 0) {
         const rawBonus = extra.reduce((s,x) => s + (x.neutral || 0), 0) * 0.05;
         score += Math.min(score * 0.10, rawBonus);
@@ -3859,22 +3858,29 @@ function computePositionalRooms(profiles) {
         ? Math.round(core.reduce((s,x) => s + (x.neutral || 0), 0) / core.length)
         : 0;
 
-      const depthLabel = extra.length >= 2 ? 'Strong' : extra.length === 1 ? 'Solid' : 'Thin';
-      const topPlayer  = core.length ? core[0].name : (p.byPos[pos] && p.byPos[pos][0] ? p.byPos[pos][0].name : '-');
-
-      rooms[pos] = { score, coreAvg, depthLabel, topPlayer };
+      const topPlayer = core.length ? core[0].name : (p.byPos[pos] && p.byPos[pos][0] ? p.byPos[pos][0].name : '-');
+      rooms[pos] = { score, coreAvg, topPlayer };
     });
-
-    return {
-      ...p,
-      qbRoom: rooms.QB, rbRoom: rooms.RB, wrRoom: rooms.WR, teRoom: rooms.TE,
-      // keep backward compat for League Intel table sort columns
-      qbVal: rooms.QB.score,
-      rbVal: rooms.RB.score,
-      wrVal: rooms.WR.score,
-      teVal: rooms.TE.score,
-    };
+    return { p, rooms };
   });
+
+  // Pass 2 — assign quality labels by score percentile within each position.
+  // Top third = Strong, middle third = Solid, bottom third = Weak.
+  // This ensures labels reflect relative quality across the league, not raw depth counts.
+  ['QB','RB','WR','TE'].forEach(pos => {
+    const sorted = [...allRaw].sort((a,b) => a.rooms[pos].score - b.rooms[pos].score);
+    const n = sorted.length;
+    sorted.forEach((r, rank) => {
+      const pct = n > 1 ? rank / (n - 1) : 0.5;
+      r.rooms[pos].depthLabel = pct >= 0.67 ? 'Strong' : pct >= 0.33 ? 'Solid' : 'Weak';
+    });
+  });
+
+  return allRaw.map(({ p, rooms }) => ({
+    ...p,
+    qbRoom: rooms.QB, rbRoom: rooms.RB, wrRoom: rooms.WR, teRoom: rooms.TE,
+    qbVal: rooms.QB.score, rbVal: rooms.RB.score, wrVal: rooms.WR.score, teVal: rooms.TE.score,
+  }));
 }
 
 function renderLeagueIntel() {
@@ -3906,10 +3912,10 @@ function renderLeagueIntel() {
     weightedAge:  'Average age of your roster weighted by each player\'s dynasty value — high-value players count more. Green ≤25 (young core/window opening), yellow 25–29 (prime window), red ≥29.5 (aging/window closing).',
     avgLiq:       'Liquidity score: how tradeable your assets are. High-liquidity players (elite young starters) are easy to move. Low-liquidity players (aging backups, stashes) are hard to trade for value.',
     pickValue:    'Total dynasty value of all future draft picks you own, based on FantasyCalc RDP (Rookie Draft Pick) values. Early picks in strong drafts are worth significantly more.',
-    qbVal:        'Weighted positional room score for QB — counts only your top 2 QBs, weighted 70/30, filtered to dynasty-relevant players only (top 24 dynasty QBs). Rewards elite starters, not depth accumulation.',
-    rbVal:        'Weighted RB room score — top 4 RBs, weighted 40/30/20/10, filtered to top 40 dynasty RBs. Penalizes teams relying on volume over quality.',
-    wrVal:        'Weighted WR room score — top 6 WRs, weighted 30/25/20/15/7/3, filtered to top 60 dynasty WRs. The heaviest position weight reflects WR depth importance in dynasty.',
-    teVal:        'Weighted TE room score — top 2 TEs, weighted 80/20, filtered to top 24 dynasty TEs. Elite TE1 dominates the score since the position is so scarce.',
+    qbVal:        'Weighted QB room score — top 2 QBs weighted 70/30, filtered to dynasty-relevant players (top 24 QBs). Label (Strong/Solid/Weak) reflects quality relative to other teams in this league.',
+    rbVal:        'Weighted RB room score — top 4 RBs weighted 40/30/20/10, filtered to top 40 dynasty RBs. Label reflects relative quality vs. other teams in this league.',
+    wrVal:        'Weighted WR room score — top 6 WRs weighted 30/25/20/15/7/3, filtered to top 60 dynasty WRs. Label reflects relative quality vs. other teams in this league.',
+    teVal:        'Weighted TE room score — top 2 TEs weighted 80/20, filtered to top 24 dynasty TEs. Label reflects relative quality vs. other teams in this league.',
   };
 
   function th(col, label) {
@@ -3997,8 +4003,8 @@ function renderLeagueIntel() {
   const posColors  = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
   const roomKeys   = { QB:'qbRoom',  RB:'rbRoom',  WR:'wrRoom',  TE:'teRoom'  };
 
-  html += `<div class="section-title" style="margin-top:24px">Positional Room Rankings ${tip('Ranks each team\'s positional room using a weighted top-N model. Only dynasty-relevant players count (QB top 24, RB top 40, WR top 60, TE top 24). Each slot is weighted differently — your WR1 counts far more than your WR6. Prevents teams from inflating scores by hoarding mediocre depth.')}
-    <span class="section-note">Weighted top-N · relevance-filtered · depth-adjusted</span>
+  html += `<div class="section-title" style="margin-top:24px">Positional Room Rankings ${tip('Ranks each team\'s positional room using a weighted top-N model. Only dynasty-relevant players count (QB top 24, RB top 40, WR top 60, TE top 24). Each slot is weighted differently — your WR1 counts far more than your WR6. Labels (Strong/Solid/Weak) are relative to your league — roughly the top third, middle third, and bottom third of teams at each position.')}
+    <span class="section-note">Weighted top-N · relevance-filtered · league-relative quality</span>
   </div>
   <div class="pos-room-grid">`;
 
@@ -4013,7 +4019,7 @@ function renderLeagueIntel() {
       </thead><tbody>`;
     pSorted.forEach((p, i) => {
       const room = p[rk];
-      const depthCls = room.depthLabel === 'Strong' ? 'depth-strong' : room.depthLabel === 'Solid' ? 'depth-solid' : 'depth-thin';
+      const depthCls = room.depthLabel === 'Strong' ? 'depth-strong' : room.depthLabel === 'Solid' ? 'depth-solid' : 'depth-weak';
       html += `<tr>
         <td>${badge(i+1)}</td>
         <td class="bold" style="font-size:.75rem">
