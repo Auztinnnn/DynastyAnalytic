@@ -15,6 +15,8 @@
       --yellow: #d29922; --purple: #a371f7; --orange: #fb8500;
     }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    /* Prevent iOS double-tap zoom on all interactive elements */
+    button, a, select, input, [onclick] { touch-action: manipulation; }
 
     /* SIDEBAR */
     header { position: fixed; left: 0; top: 0; width: 214px; height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 200; overflow: hidden; }
@@ -5568,13 +5570,13 @@ function _renderTrendsContent(el) {
   const lbBtns = [24,48,168].map(h => {
     const lbl = h===24?'24h':h===48?'48h':'7d';
     const on  = trendsState.lookback === h;
-    return `<button onclick="setTrendsLookback(${h})" style="background:${on?'var(--accent)':'var(--surface2)'};color:${on?'#0d1117':'var(--muted)'};border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer;font-weight:${on?700:400}">${lbl}</button>`;
+    return `<button onclick="setTrendsLookback(${h})" style="background:${on?'var(--accent)':'var(--surface2)'};color:${on?'#0d1117':'var(--muted)'};border:1px solid var(--border);border-radius:6px;padding:10px 16px;font-size:.8rem;cursor:pointer;font-weight:${on?700:400};min-height:44px;min-width:44px;touch-action:manipulation">${lbl}</button>`;
   }).join('');
 
   const posBtns = ['ALL','QB','RB','WR','TE'].map(p => {
     const on = trendsState.pos === p;
     const c  = posColors[p] || 'var(--accent)';
-    return `<button onclick="setTrendsPos('${p}')" style="background:${on?'rgba(255,255,255,.07)':'var(--surface2)'};color:${on?c:'var(--muted)'};border:1px solid ${on?c:'var(--border)'};border-radius:20px;padding:4px 12px;font-size:.75rem;font-weight:600;cursor:pointer">${p}</button>`;
+    return `<button onclick="setTrendsPos('${p}')" style="background:${on?'rgba(255,255,255,.07)':'var(--surface2)'};color:${on?c:'var(--muted)'};border:1px solid ${on?c:'var(--border)'};border-radius:20px;padding:10px 14px;font-size:.8rem;font-weight:600;cursor:pointer;min-height:44px;min-width:44px;touch-action:manipulation">${p}</button>`;
   }).join('');
 
   function playerRow(p, i, countLabel) {
