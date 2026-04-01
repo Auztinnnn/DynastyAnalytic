@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dynasty Analytics Dashboard</title>
+  <title>Front Office</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
@@ -619,14 +619,17 @@
 
 <!-- ── MOBILE TOP BAR (hidden on desktop) ─────────────────── -->
 <div id="mobile-topbar">
-  <span class="m-logo">Dynasty Analytics</span>
+  <span class="m-logo"><img src="./front-office-logo.png" alt="Front Office" style="height:30px;width:auto;mix-blend-mode:screen;display:block"></span>
   <button id="nav-hamburger" onclick="mobileNavOpen()" aria-label="Open navigation">☰</button>
 </div>
 <!-- ── MOBILE OVERLAY ──────────────────────────────────────── -->
 <div id="mobile-overlay" onclick="mobileNavClose()"></div>
 
 <header>
-  <div class="logo">Dynasty Analytics <button id="nav-close-btn" onclick="mobileNavClose()" aria-label="Close navigation">✕</button></div>
+  <div class="logo" style="display:flex;align-items:center;justify-content:space-between">
+    <img src="./front-office-logo.png" alt="Front Office" style="height:38px;width:auto;mix-blend-mode:screen;display:block">
+    <button id="nav-close-btn" onclick="mobileNavClose()" aria-label="Close navigation">✕</button>
+  </div>
   <nav id="main-nav">
     <button class="active" onclick="switchTab('overview')">Overview <span class="nav-shortcut">1</span></button>
     <button onclick="switchTab('power')">Power Rankings <span class="nav-shortcut">2</span></button>
@@ -4555,7 +4558,7 @@ async function shareOrDownloadBlob(blob, filename) {
   if (onMobile && navigator.canShare) {
     const file = new File([blob], filename, { type: 'image/png' });
     if (navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'Dynasty Analytics' });
+      await navigator.share({ files: [file], title: 'Front Office' });
       return;
     }
   }
