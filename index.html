@@ -4583,6 +4583,16 @@ async function captureSectionAsPng(el, label) {
     '.capture-btn, .chart-share-btn, .tip, .fc-hide-btn, [data-ignore-capture], .no-capture'
   ).forEach(n => n.remove());
 
+  // Neutralize sticky positioning — sticky cells reference viewport coords,
+  // so in an off-screen container they jump to the wrong position
+  clone.querySelectorAll('*').forEach(node => {
+    const s = node.style;
+    if (s.position === 'sticky' || s.position === '-webkit-sticky') {
+      s.position = 'relative';
+      s.left = ''; s.top = ''; s.right = ''; s.bottom = '';
+    }
+  });
+
   // Force table wrappers to show full content without scroll clipping
   clone.querySelectorAll('.table-wrap').forEach(tw => {
     tw.style.overflow = 'visible';
@@ -4590,11 +4600,12 @@ async function captureSectionAsPng(el, label) {
     tw.style.maxWidth = 'none';
   });
 
-  // Off-screen fixed container — bypasses all mobile viewport constraints
+  // Off-screen fixed container — bypasses all mobile viewport constraints.
+  // Use absolute (not fixed) so sticky children don't reference the viewport.
   const container = document.createElement('div');
   container.style.cssText = [
-    'position:fixed', 'left:-9999px', 'top:0',
-    'width:max-content', 'min-width:1200px',
+    'position:absolute', 'left:-9999px', 'top:0',
+    'width:max-content', 'min-width:1400px',
     'background:#0d1117', 'padding:16px',
     'box-sizing:border-box', 'overflow:visible', 'z-index:-1'
   ].join(';');
