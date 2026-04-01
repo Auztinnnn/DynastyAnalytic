@@ -1346,13 +1346,13 @@ function renderScheduleMatrix(league) {
     <div class="section-title">Schedule Swap Matrix
       <span class="section-note">Row = team's actual scores &nbsp;·&nbsp; Column = schedule applied &nbsp;·&nbsp; <span style="color:var(--yellow)">■</span> = actual record &nbsp;·&nbsp; W+L = weeks played &nbsp;·&nbsp; head-to-head week uses league avg as substitute</span>
     </div>
-    <div class="table-wrap" style="overflow-x:visible">
-      <table style="font-size:.72rem;width:100%;table-layout:fixed">
+    <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table style="font-size:.72rem;width:max-content;min-width:100%;border-collapse:collapse">
         <thead><tr>
-          <th style="width:110px;position:sticky;left:0;background:var(--surface);z-index:2;white-space:normal;word-break:break-word;text-align:left">Team</th>`;
+          <th style="width:110px;min-width:90px;position:sticky;left:0;background:var(--surface);z-index:2;white-space:nowrap;text-align:left">Team</th>`;
 
   sorted.forEach(t => {
-    html += `<th style="text-align:center;font-size:.63rem;white-space:normal;word-break:break-word;max-width:52px;padding:4px 2px" title="${t.teamName}">${t.teamName}</th>`;
+    html += `<th style="text-align:center;font-size:.63rem;white-space:nowrap;padding:4px 2px" title="${t.teamName}">${t.teamName}</th>`;
   });
   html += `<th style="text-align:center;color:var(--green);white-space:nowrap;width:44px">Best</th>
            <th style="text-align:center;color:var(--red);white-space:nowrap;width:44px">Worst</th>
@@ -1370,7 +1370,7 @@ function renderScheduleMatrix(league) {
     if (bestW  === -1)        bestW  = 0;
     if (worstW === nGames+1)  worstW = 0;
 
-    html += `<tr><td class="bold" style="font-size:.75rem;position:sticky;left:0;background:var(--surface);z-index:1;white-space:normal;word-break:break-word;width:110px;padding:5px 6px">${rowTeam.teamName}</td>`;
+    html += `<tr><td class="bold" style="font-size:.75rem;position:sticky;left:0;background:var(--surface);z-index:1;white-space:nowrap;width:110px;padding:5px 6px">${rowTeam.teamName}</td>`;
 
     let bestShown = false, worstShown = false;
     sorted.forEach(colTeam => {
@@ -4544,10 +4544,114 @@ function runMveValidation(league) {
 // On mobile: use your device's screenshot buttons to capture.
 // On desktop: use Ctrl+P to save as PDF.
 
+// ── Shared blob → share/download helper ───────────────────────
+async function shareOrDownloadBlob(blob, filename) {
+  const onMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (onMobile && navigator.canShare) {
+    const file = new File([blob], filename, { type: 'image/png' });
+    if (navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Dynasty Analytics' });
+      return;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { download: filename, href: url });
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+}
+
+// ── Render any DOM element to a full-size PNG blob ────────────
+// Uses SVG <foreignObject> to render the element at its natural
+// scrollWidth × scrollHeight — no html2canvas, no external deps.
+async function captureElementAsPng(el) {
+  const clone = el.cloneNode(true);
+
+  // Canvas → inline img data URL
+  const liveCanvases = Array.from(el.querySelectorAll('canvas'));
+  Array.from(clone.querySelectorAll('canvas')).forEach((dst, i) => {
+    const src = liveCanvases[i];
+    if (!src) return;
+    try {
+      const img = document.createElement('img');
+      img.src = src.toDataURL('image/png');
+      img.style.cssText = `width:100%;max-width:${src.width}px;height:auto;display:block`;
+      dst.parentNode.replaceChild(img, dst);
+    } catch(e) {}
+  });
+
+  // External images → neutral placeholder (avoids CORS taint)
+  clone.querySelectorAll('img').forEach(img => {
+    const w = img.offsetWidth || 28, h = img.offsetHeight || 28;
+    const ph = document.createElement('span');
+    ph.style.cssText = `display:inline-block;width:${w}px;height:${h}px;border-radius:50%;background:#21262d;flex-shrink:0;vertical-align:middle`;
+    img.parentNode.replaceChild(ph, img);
+  });
+
+  clone.querySelectorAll('.capture-btn,.chart-share-btn,.tip,.fc-hide-btn').forEach(n => n.remove());
+
+  // Full content dimensions: tables can overflow their wrapper
+  let w = el.scrollWidth;
+  el.querySelectorAll('table').forEach(t => { w = Math.max(w, t.scrollWidth + 32); });
+  const h = el.scrollHeight;
+
+  const css = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
+
+  const inner = `<div xmlns="http://www.w3.org/1999/xhtml"
+    style="width:${w}px;min-height:${h}px;background:#0d1117;padding:16px;box-sizing:border-box;overflow:visible">
+    <style>${css}
+      .table-wrap{overflow:visible!important;width:auto!important}
+      table{white-space:nowrap}
+      .chart-wrap img,.chart-wrap canvas{max-height:none!important}
+    </style>
+    ${clone.outerHTML}
+  </div>`;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <foreignObject width="${w}" height="${h}">${inner}</foreignObject>
+  </svg>`;
+
+  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const canvas = document.createElement('canvas');
+      canvas.width  = w * dpr;
+      canvas.height = h * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(svgUrl);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+    };
+    img.onerror = e => { URL.revokeObjectURL(svgUrl); reject(e); };
+    img.src = svgUrl;
+  });
+}
+
+// ── Share a Chart.js canvas directly as a PNG ─────────────────
+async function shareChart(btn) {
+  const wrap = btn.closest('.chart-wrap');
+  if (!wrap) return;
+  const canvas = wrap.querySelector('canvas');
+  if (!canvas) return;
+  const orig = btn.textContent;
+  btn.textContent = '⏳'; btn.disabled = true;
+  try {
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    await shareOrDownloadBlob(blob, `dynasty-chart-${new Date().toISOString().slice(0,10)}.png`);
+  } catch(e) { if (e.name !== 'AbortError') alert('Share failed: ' + e.message); }
+  finally { btn.textContent = orig; btn.disabled = false; }
+}
+
+// ── Open full-width table/section view in a new tab ────────────
+// Charts are converted to data-URL <img>s. Tables have all overflow
+// removed so nothing is clipped. Use device screenshot or Ctrl+P.
 function openCaptureWindow(el, filename) {
   const clone = el.cloneNode(true);
 
-  // Copy live Chart.js canvases to <img> data URLs in the clone
+  // Copy live Chart.js canvases to full-res <img> data URLs
   const liveCanvases  = Array.from(el.querySelectorAll('canvas'));
   const cloneCanvases = Array.from(clone.querySelectorAll('canvas'));
   liveCanvases.forEach((src, i) => {
@@ -4556,13 +4660,13 @@ function openCaptureWindow(el, filename) {
     try {
       const img = document.createElement('img');
       img.src = src.toDataURL('image/png');
-      img.style.cssText = `width:${src.offsetWidth||src.width||300}px;height:${src.offsetHeight||src.height||200}px;max-width:100%;display:block`;
+      img.style.cssText = `width:100%;max-width:${src.width}px;height:auto;display:block`;
       dst.parentNode.replaceChild(img, dst);
     } catch(e) {}
   });
 
-  // Replace all remaining <img> (avatars/headshots) with small colored circles
-  clone.querySelectorAll('img').forEach(img => {
+  // Replace external images with colored placeholders (no network requests)
+  clone.querySelectorAll('img[src*="sleeper"], img[src*="http"]').forEach(img => {
     const w = img.offsetWidth  || parseInt(img.getAttribute('width'))  || 28;
     const h = img.offsetHeight || parseInt(img.getAttribute('height')) || 28;
     const ph = document.createElement('span');
@@ -4570,10 +4674,9 @@ function openCaptureWindow(el, filename) {
     img.parentNode.replaceChild(ph, img);
   });
 
-  // Strip capture buttons and tooltip markers from the clone
+  // Strip capture buttons and tooltips
   clone.querySelectorAll('.capture-btn, .tip').forEach(n => n.remove());
 
-  // Inline the app's CSS so the new window looks identical
   const css = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
 
   const html = `<!DOCTYPE html>
@@ -4583,17 +4686,23 @@ function openCaptureWindow(el, filename) {
 <title>Dynasty Analytics — ${filename}</title>
 <style>
 ${css}
-body { background:#0d1117; padding:12px 16px; margin:0; }
-#_cap_bar { position:sticky;top:0;background:#161b22;border-bottom:1px solid #21262d;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:999;font-size:.78rem;color:#8b949e; }
+/* Full-width render — remove all overflow clipping so tables never cut off */
+body { background:#0d1117; padding:12px 16px; margin:0; width:max-content; min-width:100vw; }
+.table-wrap { overflow:visible !important; width:auto !important; }
+table { width:auto !important; white-space:nowrap; }
+.chart-wrap canvas, .chart-wrap img { max-height:none !important; }
+main, header, #mobile-topbar { display:none !important; }
+#_cap_bar { position:sticky;top:0;background:#161b22;border-bottom:1px solid #21262d;padding:8px 12px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:999;font-size:.78rem;color:#8b949e;width:100vw;box-sizing:border-box; }
 #_cap_bar button { background:#58a6ff;color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:.78rem;font-weight:600;cursor:pointer; }
-#_cap_bar button.sec { background:var(--surface2);color:var(--text);border:1px solid var(--border); }
-@media print { #_cap_bar { display:none!important; } }
+#_cap_bar button.sec { background:#1c2333;color:#e6edf3;border:1px solid #21262d; }
+@media print { #_cap_bar { display:none !important; } body { width:auto; } table { white-space:normal; } }
 </style>
 </head>
 <body>
 <div id="_cap_bar">
-  <span>📸 <strong>Mobile:</strong> use your device's screenshot buttons &nbsp;·&nbsp; <strong>Desktop:</strong> Ctrl+P → Save as PDF</span>
-  <button onclick="window.print()">🖨 Print</button>
+  <span>📸 <strong>Mobile:</strong> screenshot with your device &nbsp;·&nbsp; <strong>Desktop:</strong> Ctrl+P → Save as PDF / image</span>
+  <button onclick="window.print()">🖨 Print / Save PDF</button>
   <button class="sec" onclick="window.close()">✕ Close</button>
 </div>
 ${clone.outerHTML}
@@ -4602,14 +4711,23 @@ ${clone.outerHTML}
   const blob = new Blob([html], { type: 'text/html' });
   const url  = URL.createObjectURL(blob);
   const win  = window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
   if (!win) alert('Pop-up blocked — please allow pop-ups for this page and try again.');
 }
 
-function captureSection(btn) {
+async function captureSection(btn) {
   const section = btn.closest('.section') || btn.closest('.section-title')?.parentElement;
   if (!section) return;
-  openCaptureWindow(section, `dynasty-${btn.dataset.label||'section'}-${new Date().toISOString().slice(0,10)}`);
+  const orig = btn.textContent;
+  btn.textContent = '⏳'; btn.disabled = true;
+  const label    = btn.dataset.label || 'section';
+  const filename = `dynasty-${label}-${new Date().toISOString().slice(0,10)}.png`;
+  try {
+    const blob = await captureElementAsPng(section);
+    await shareOrDownloadBlob(blob, filename);
+  } catch(e) {
+    if (e.name !== 'AbortError') openCaptureWindow(section, label);
+  } finally { btn.textContent = orig; btn.disabled = false; }
 }
 
 function toggleFranchiseCard(rosterId, btn) {
@@ -4664,10 +4782,18 @@ function toggleFranchiseScreenshotMode(btn) {
   });
 }
 
-function captureById(id, btn) {
+async function captureById(id, btn) {
   const el = document.getElementById(id);
   if (!el) return;
-  openCaptureWindow(el, `franchise-intel-${new Date().toISOString().slice(0,10)}`);
+  const orig = btn.textContent;
+  btn.textContent = '⏳'; btn.disabled = true;
+  const filename = `franchise-intel-${new Date().toISOString().slice(0,10)}.png`;
+  try {
+    const blob = await captureElementAsPng(el);
+    await shareOrDownloadBlob(blob, filename);
+  } catch(e) {
+    if (e.name !== 'AbortError') openCaptureWindow(el, 'franchise-intel');
+  } finally { btn.textContent = orig; btn.disabled = false; }
 }
 
 // Inject a 📷 button into every .section-title that doesn't have one yet.
@@ -4688,6 +4814,20 @@ function addCaptureButtons() {
     btn.dataset.label = label.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     btn.onclick = () => captureSection(btn);
     title.appendChild(btn);
+  });
+
+  // Inject a 📊 Share button directly on each chart canvas wrap
+  document.querySelectorAll('.chart-wrap').forEach(wrap => {
+    if (wrap.querySelector('.chart-share-btn')) return;
+    if (!wrap.querySelector('canvas')) return;
+    const btn = document.createElement('button');
+    btn.className = 'capture-btn chart-share-btn';
+    btn.textContent = '📊 Share';
+    btn.title = 'Share chart as PNG (full resolution)';
+    btn.style.cssText = 'position:absolute;top:10px;right:10px;';
+    btn.onclick = () => shareChart(btn);
+    wrap.style.position = 'relative';
+    wrap.appendChild(btn);
   });
 }
 
