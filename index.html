@@ -1910,7 +1910,7 @@ function renderWeeklyTable(league) {
     weeks.forEach(w=>{
       const e=(weekly[t.rosterId]||[]).find(x=>x.week===w);
       const pts=e?e.points:null;
-      const cls=pts===weekMax[w]?'week-high':pts===weekMin[w]&&pts>0?'week-low':'';
+      const cls=pts!==null&&pts>0&&pts>=weekMax[w]?'week-high':pts!==null&&pts>0&&pts<=weekMin[w]?'week-low':'';
       html+=`<td class="${cls}">${pts!=null?fmtP(pts):'-'}</td>`;
     });
     html+=`</tr>`;
