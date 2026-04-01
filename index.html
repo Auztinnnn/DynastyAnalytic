@@ -2441,7 +2441,7 @@ function renderPowerRankings() {
   html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe, Productive Middle, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
   rankings.forEach((r,i)=>{
     const cls = mveClassMap[r.rosterId] || { label:'—', color:'#8b949e', bg:'rgba(148,163,184,.1)' };
-    const tb=`<span class="tier-badge" style="background:${cls.bg};color:${cls.color}">${cls.label}</span>`;
+    const tb=`<span class="tier-badge" style="background:${cls.bg};color:${cls.color};border:1px solid ${cls.border||cls.color+'66'}">${cls.label}</span>`;
     const rfMax=Math.max(...rankings.map(x=>x.recentPts));
     const rfW=rfMax>0?(r.recentPts/rfMax*100).toFixed(1):'0';
     html+=`<tr><td>${badge(i+1)}</td><td class="bold">${r.teamName}</td><td>${tb}</td>`;
@@ -3724,12 +3724,12 @@ function mveTeamProfile(rosterId, league) {
 
 // ── CLASSIFICATION STYLES (single source of truth) ────────────
 const CLASS_STYLES = {
-  'Contender':         { color:'#16a34a', bg:'rgba(22,163,74,.15)'   },
-  'Fringe':  { color:'#d97706', bg:'rgba(217,119,6,.15)'   },
-  'Productive Middle': { color:'#0ea5e9', bg:'rgba(14,165,233,.12)'  },
-  'Retool':            { color:'#6366f1', bg:'rgba(99,102,241,.15)'  },
-  'Rebuild':           { color:'#a855f7', bg:'rgba(168,85,247,.15)'  },
-  'Rebuilding':        { color:'#dc2626', bg:'rgba(220,38,38,.15)'   },
+  'Contender':         { color:'#16a34a', bg:'rgba(22,163,74,.15)',   border:'rgba(22,163,74,.45)'  },
+  'Fringe':            { color:'#d97706', bg:'rgba(217,119,6,.15)',   border:'rgba(217,119,6,.55)'  },
+  'Productive Middle': { color:'#0ea5e9', bg:'rgba(14,165,233,.12)',  border:'rgba(14,165,233,.4)'  },
+  'Retool':            { color:'#6366f1', bg:'rgba(99,102,241,.15)',  border:'rgba(99,102,241,.45)' },
+  'Rebuild':           { color:'#a855f7', bg:'rgba(168,85,247,.15)',  border:'rgba(168,85,247,.45)' },
+  'Rebuilding':        { color:'#dc2626', bg:'rgba(220,38,38,.15)',   border:'rgba(220,38,38,.45)'  },
 };
 
 // ── TUNING KNOBS for classification (adjust here) ─────────────
@@ -4054,9 +4054,9 @@ function renderFranchiseIntel() {
         ${av}
         <div class="franchise-card-title">
           <div class="franchise-card-name">${prof.teamName}</div>
-          <div style="margin-top:3px">
-            <span class="archetype-badge" style="background:${cl.bg};color:${cl.color}">${cl.label}</span>
-            <span style="font-size:.63rem;color:var(--muted);margin-left:5px">Window: ${cl.window}</span>
+          <div style="margin-top:4px;display:flex;flex-direction:column;gap:3px">
+            <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
+            <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
           </div>
         </div>
       </div>
