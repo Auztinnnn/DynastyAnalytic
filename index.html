@@ -2133,8 +2133,8 @@ function buildPosStatsInner(league) {
 
     h += `<tr style="border-top:2px solid var(--border)">
       <td style="font-size:.72rem;color:var(--muted);font-style:italic">League Avg</td>
-      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem;color:var(--muted)">${fmtP(leagueAvg[c])}</td>`).join('')}
-      <td style="text-align:center;font-size:.78rem;color:var(--muted)">${fmtP(columns.reduce((s,c)=>s+leagueAvg[c],0))}</td>
+      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem">${fmtP(leagueAvg[c])}</td>`).join('')}
+      <td style="text-align:center;font-size:.78rem">${fmtP(columns.reduce((s,c)=>s+leagueAvg[c],0))}</td>
     </tr></tbody></table></div>`;
 
     // ── DD count table ──
@@ -2166,7 +2166,7 @@ function buildPosStatsInner(league) {
 
     h += `<tr style="border-top:2px solid var(--border)">
       <td style="font-size:.72rem;color:var(--muted);font-style:italic">League Rate</td>
-      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem;color:var(--muted)">${(leagueDDRate[c]*100).toFixed(0)}%</td>`).join('')}
+      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem">${(leagueDDRate[c]*100).toFixed(0)}%</td>`).join('')}
       <td></td>
     </tr></tbody></table></div>`;
 
@@ -2224,11 +2224,11 @@ function buildPosStatsInner(league) {
       });
       const totalRate = totalApp > 0 ? ` (${(totalDD/totalApp*100).toFixed(0)}%)` : '';
       h += `<td style="text-align:center;font-weight:600">${totalDD}${totalRate}</td>`;
-      h += `<td style="text-align:center;color:var(--muted);font-size:.75rem">${totalApp}</td></tr>`;
+      h += `<td style="text-align:center;font-size:.75rem">${totalApp}</td></tr>`;
     });
     h += `<tr style="border-top:2px solid var(--border)">
       <td style="font-size:.72rem;color:var(--muted);font-style:italic">League Rate</td>
-      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem;color:var(--muted)">${(leagueDDRate[c]*100).toFixed(0)}%</td>`).join('')}
+      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem">${(leagueDDRate[c]*100).toFixed(0)}%</td>`).join('')}
       <td colspan="2"></td>
     </tr></tbody></table></div>`;
 
@@ -2251,7 +2251,7 @@ function buildPosStatsInner(league) {
     });
     h += `<tr style="border-top:2px solid var(--border)">
       <td style="font-size:.72rem;color:var(--muted);font-style:italic">League Avg</td>
-      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem;color:var(--muted)">${fmtP(leagueAvg[c])}</td>`).join('')}
+      ${columns.map(c=>`<td style="text-align:center;font-size:.78rem">${fmtP(leagueAvg[c])}</td>`).join('')}
     </tr></tbody></table></div>`;
 
     return h;
@@ -2296,12 +2296,12 @@ function posColor(val, avg, absoluteThreshold) {
     const diff = val - avg;
     if (diff >  1.0) return 'color:var(--green);font-weight:600';
     if (diff < -1.0) return 'color:var(--red)';
-    return 'color:var(--muted)';
+    return '';
   }
   const diff = (val - avg) / avg;
   if (diff >  0.1) return 'color:var(--green);font-weight:600';
   if (diff < -0.1) return 'color:var(--red)';
-  return 'color:var(--muted)';
+  return '';
 }
 
 function buildAvgTableHtml(columns, statsMap, teams, leagueAvg, noteText, absoluteThreshold) {
@@ -2325,8 +2325,8 @@ function buildAvgTableHtml(columns, statsMap, teams, leagueAvg, noteText, absolu
   });
   h += `<tr style="border-top:2px solid var(--border)">
     <td style="font-size:.72rem;color:var(--muted);font-style:italic">League Avg</td>
-    ${columns.map(c=>`<td style="text-align:center;font-size:.78rem;color:var(--muted)">${fmtP(leagueAvg[c])}</td>`).join('')}
-    <td style="text-align:center;font-size:.78rem;color:var(--muted)">${fmtP(columns.reduce((s,c)=>s+leagueAvg[c],0))}</td>
+    ${columns.map(c=>`<td style="text-align:center;font-size:.78rem">${fmtP(leagueAvg[c])}</td>`).join('')}
+    <td style="text-align:center;font-size:.78rem">${fmtP(columns.reduce((s,c)=>s+leagueAvg[c],0))}</td>
   </tr></tbody></table></div>`;
   return h;
 }
@@ -2354,12 +2354,12 @@ function buildDDTableHtml(columns, statsMap, teams, leagueDDRate, showSpots=fals
     });
     const totalRate = totalApp > 0 ? ` (${(totalDD/totalApp*100).toFixed(0)}%)` : '';
     h += `<td style="text-align:center;font-weight:600">${totalDD}${totalRate}</td>`;
-    if (showSpots) h += `<td style="text-align:center;color:var(--muted);font-size:.75rem">${totalApp}</td>`;
+    if (showSpots) h += `<td style="text-align:center;font-size:.75rem">${totalApp}</td>`;
     h += `</tr>`;
   });
   h += `<tr style="border-top:2px solid var(--border)">
     <td style="font-size:.72rem;color:var(--muted);font-style:italic">League Rate</td>
-    ${columns.map(c=>`<td style="text-align:center;font-size:.78rem;color:var(--muted)">${(leagueDDRate[c]*100).toFixed(0)}%</td>`).join('')}
+    ${columns.map(c=>`<td style="text-align:center;font-size:.78rem">${(leagueDDRate[c]*100).toFixed(0)}%</td>`).join('')}
     <td${showSpots?' colspan="2"':''}></td>
   </tr></tbody></table></div>`;
   return h;
@@ -4005,7 +4005,7 @@ function renderFranchiseIntel() {
 
   let html = `<div id="franchise-snapshot"><div class="section-title">Franchise Intelligence ${tip('Deep dynasty health cards for every team. Uses MVE (Multi-Variable Evaluation) — FantasyCalc values adjusted for age curve, player tier, role, positional scarcity, and KTC market sentiment. Tiers reflect absolute dynasty strength, not just rank in this league.')}
     <button class="capture-btn" id="franchise-screenshot-mode-btn" onclick="toggleFranchiseScreenshotMode(this)" title="Toggle screenshot layout (3-column, hides ghosted teams)">🖼 Screenshot Mode</button>
-    <button class="capture-btn" onclick="captureById('franchise-snapshot',this)" title="Save franchise cards as image">📷 Save</button>
+    <button class="capture-btn" onclick="captureById('franchise-snapshot',this)" title="Save franchise cards as image">📸 Share</button>
     <span class="section-note">MVE layered valuation · ${S.ktcAvailable?'FantasyCalc + KTC overlay':'FantasyCalc only'}</span>
   </div><div class="franchise-grid" id="franchise-grid">`;
 
@@ -5124,7 +5124,7 @@ function addCaptureButtons() {
     const label = text.slice(0, 20) || 'section';
     const btn = document.createElement('button');
     btn.className = 'capture-btn';
-    btn.textContent = '📷 Save';
+    btn.textContent = '📸 Share';
     btn.title = 'Save section as image';
     btn.dataset.label = label.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     btn.onclick = () => captureSection(btn);
@@ -5374,7 +5374,7 @@ function renderDraftHistory() {
     <div class="section">
       <div class="section-title">Pick-by-Pick Breakdown
         ${selTeam !== 'ALL' ? '' : '<span style="font-size:.7rem;color:var(--muted);margin-left:8px;font-weight:400">— select a team to enable screenshot</span>'}
-        ${selTeam !== 'ALL' ? '<button class="capture-btn" onclick="captureSection(this)" data-label="draft-picks">📷 Save</button>' : ''}
+        ${selTeam !== 'ALL' ? '<button class="capture-btn" onclick="captureSection(this)" data-label="draft-picks">📸 Share</button>' : ''}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:.72rem">
         <span style="padding:2px 8px;border-radius:4px;background:rgba(63,185,80,.15);color:var(--green);font-weight:700">▲ Hit</span><span style="color:var(--muted)">Current value ≥ 150% of expected at pick slot</span>
