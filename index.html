@@ -421,9 +421,9 @@
     .m-logo { flex: 1; font-size: .95rem; font-weight: 700; color: var(--accent); }
     #nav-hamburger {
       background: none; border: 1px solid var(--border);
-      border-radius: 8px; padding: 7px 11px; cursor: pointer;
-      color: var(--text); font-size: 1.2rem; line-height: 1; flex-shrink: 0;
-      min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
+      border-radius: 7px; padding: 5px 9px; cursor: pointer;
+      color: var(--text); font-size: 1.05rem; line-height: 1; flex-shrink: 0;
+      min-width: 38px; min-height: 38px; display: flex; align-items: center; justify-content: center;
     }
     #nav-close-btn {
       display: none;
@@ -556,9 +556,14 @@
       .trade-summary { padding: 12px; }
 
       /* Franchise & player grids */
-      .franchise-grid { grid-template-columns: 1fr; gap: 10px; }
-      .franchise-grid.screenshot-mode { grid-template-columns: repeat(2,1fr); }
+      .franchise-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .franchise-card { padding: 12px; gap: 8px; }
+      .franchise-card-name { font-size: .78rem; }
+      .franchise-stat-label { width: 60px; font-size: .68rem; }
+      .franchise-stat-val { font-size: .72rem; min-width: 36px; }
+      .franchise-stat-row { font-size: .68rem; gap: 5px; }
+      .franchise-card-avatar { width: 32px; height: 32px; }
+      .franchise-card-sub { font-size: .65rem; }
       .player-grid { grid-template-columns: 1fr; }
     }
 
@@ -587,11 +592,11 @@
       td { padding: 5px 6px; font-size: .73rem; }
 
       /* Franchise cards: compact */
-      .franchise-card { padding: 10px; gap: 7px; }
-      .franchise-card-name { font-size: .82rem; }
-      .franchise-stat-label { width: 66px; font-size: .71rem; }
-      .franchise-stat-val { min-width: 38px; font-size: .78rem; }
-      .franchise-card-avatar { width: 32px; height: 32px; }
+      .franchise-card { padding: 9px; gap: 6px; }
+      .franchise-card-name { font-size: .72rem; }
+      .franchise-stat-label { width: 54px; font-size: .62rem; }
+      .franchise-stat-val { min-width: 32px; font-size: .65rem; }
+      .franchise-card-avatar { width: 28px; height: 28px; }
 
       /* Trade chips */
       .trade-player-chip { padding: 5px 8px; font-size: .75rem; }
