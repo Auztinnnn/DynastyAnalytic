@@ -752,7 +752,7 @@
     thead th:hover { color: var(--text); }
     tbody tr { border-bottom-color: rgba(30,45,66,.8); }
     tbody tr:hover { background: rgba(74,158,255,.05); }
-    tbody tr:first-child td { color: var(--text); }
+    tbody tr:first-child td:not(.week-high):not(.week-low) { color: var(--text); }
 
     /* ── Chart containers: better frame ──────────────────── */
     .chart-wrap {
