@@ -18,7 +18,7 @@
 
     /* SIDEBAR */
     header { position: fixed; left: 0; top: 0; width: 214px; height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 200; overflow: hidden; }
-    .logo { font-size: 1.05rem; font-weight: 700; color: var(--accent); padding: 18px 16px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; flex-shrink: 0; }
+    .logo { font-size: 1.05rem; font-weight: 700; color: var(--accent); padding: 10px 16px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; flex-shrink: 0; }
     nav { display: flex; flex-direction: column; flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
     nav button { background: none; border: none; border-left: 2px solid transparent; color: var(--muted); font-size: .85rem; padding: 10px 12px 10px 16px; cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: color .15s, background .15s, border-color .15s; white-space: nowrap; width: 100%; }
     nav button:hover { color: var(--text); background: rgba(255,255,255,.04); }
@@ -627,7 +627,7 @@
 
 <header>
   <div class="logo" style="display:flex;align-items:center;justify-content:space-between">
-    <img src="./front-office-logo.png" alt="Front Office" style="width:174px;height:auto;display:block">
+    <img src="./front-office-logo.png" alt="Front Office" style="width:176px;height:auto;display:block">
     <button id="nav-close-btn" onclick="mobileNavClose()" aria-label="Close navigation">✕</button>
   </div>
   <nav id="main-nav">
