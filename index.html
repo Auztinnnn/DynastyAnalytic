@@ -520,8 +520,6 @@
       .league-controls input { width: 100%; }
       .btn { width: 100%; }
 
-      /* Hide season switcher — available per-tab */
-      #sidebar-season { display: none !important; }
 
       /* Data sources: collapsible on mobile, collapsed by default */
       #data-sources-toggle { cursor: pointer; }
@@ -1112,11 +1110,11 @@
     <button onclick="switchTab('draft-history')">Draft History <span class="nav-shortcut">8</span></button>
     <button onclick="switchTab('trends')">Market Trends <span class="nav-shortcut">9</span></button>
     <button onclick="switchTab('playoffs')">🏆 Playoffs</button>
-  </nav>
-  <div id="sidebar-season" style="padding:8px 14px 4px;border-top:1px solid var(--border);display:none">
-    <div style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Season</div>
-    <div id="sidebar-season-btns" style="display:flex;flex-direction:column;gap:3px"></div>
+  <div id="sidebar-season" style="padding:8px 14px;margin-top:4px;border-top:1px solid var(--border);display:none">
+    <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Season</div>
+    <div id="sidebar-season-btns" style="display:flex;flex-wrap:wrap;gap:4px"></div>
   </div>
+  </nav>
   <div class="league-controls">
     <input type="text" id="leagueInput" placeholder="Sleeper League ID" value="1312095865371918336" />
     <button class="btn" onclick="initLoad()">Load</button>
@@ -1156,7 +1154,7 @@
   <div id="loading"><div class="spinner"></div><p>Loading league data...</p></div>
   <div id="error-msg"></div>
 
-  <div id="tab-overview"  class="tab-content"><div id="season-switcher" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;"><span style="font-size:.78rem;color:var(--muted)">Season:</span></div><div id="overview-content"></div></div>
+  <div id="tab-overview"  class="tab-content"><div id="overview-content"></div></div>
   <div id="tab-power"     class="tab-content"><div id="power-content"></div></div>
   <div id="tab-players"   class="tab-content"><div id="players-content"></div></div>
   <div id="tab-trade"     class="tab-content"><div id="trade-content"></div></div>
@@ -1971,17 +1969,6 @@ function hsLg(pid, pos='?') { return hsImg(pid, 64, pos); }
 function renderOverview() {
   const league = ld();
   const data   = computeAllPlay(league);
-  const sw = document.getElementById('season-switcher');
-  sw.innerHTML = '<span style="font-size:.78rem;color:var(--muted)">Season:</span>';
-  S.seasonChain.forEach(sid => {
-    const s=S.leagues[sid]; if(!s) return;
-    const b=document.createElement('button');
-    b.className='season-btn'+(sid===S.currentLeagueId?' active':'');
-    b.textContent=s.season||sid;
-    b.onclick=()=>{ S.currentLeagueId=sid; renderAll(); if(currentTab==='franchise') renderFranchiseIntel(); if(currentTab==='league-intel') renderLeagueIntel(); };
-    sw.appendChild(b);
-  });
-  updateSidebarSeason();
   const sorted=[...data].sort((a,b)=>b.luck-a.luck);
   const topScorer=[...data].sort((a,b)=>b.fpts-a.fpts)[0];
   const avgPts=data.reduce((s,t)=>s+t.fpts,0)/data.length/(league.completedWeeks.length||1);
@@ -5543,6 +5530,7 @@ function renderAll() {
   renderFantasyWrapped();
   if (currentTab==='players') renderPlayersTab();
   if (currentTab==='trade')   renderTradeCalculator();
+  updateSidebarSeason();
   // Defer slightly so all innerHTML has settled before querying titles
   setTimeout(addCaptureButtons, 50);
 }
@@ -5569,6 +5557,7 @@ function toggleDataSources() {
 
 function switchTab(name) {
   mobileNavClose();
+  localStorage.setItem('fo_tab', name);
   document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('#main-nav button').forEach(e=>e.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
@@ -5599,7 +5588,7 @@ function updateSidebarSeason() {
     const active = sid === S.currentLeagueId;
     const b = document.createElement('button');
     b.textContent = s.season || sid;
-    b.style.cssText = `background:${active?'rgba(88,166,255,.12)':'none'};color:${active?'var(--accent)':'var(--muted)'};border:1px solid ${active?'rgba(88,166,255,.3)':'var(--border)'};border-radius:5px;padding:5px 10px;font-size:.78rem;cursor:pointer;text-align:left;width:100%;font-weight:${active?700:400};transition:color .15s,background .15s`;
+    b.style.cssText = `background:${active?'rgba(88,166,255,.12)':'none'};color:${active?'var(--accent)':'var(--muted)'};border:1px solid ${active?'rgba(88,166,255,.3)':'var(--border)'};border-radius:5px;padding:3px 9px;font-size:.75rem;cursor:pointer;font-weight:${active?700:400};transition:color .15s,background .15s`;
     b.onclick = () => {
       S.currentLeagueId = sid;
       renderAll();
@@ -6185,7 +6174,7 @@ function setTrendsPos(p) {
 
 // ── KEYBOARD SHORTCUTS ────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { mobileNavClose(); return; }
+  if (e.key === 'Escape') { closeRosterModal(); mobileNavClose(); return; }
   if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
   const map = {'1':'overview','2':'power','3':'players','4':'trade','5':'wrapped','6':'franchise','7':'league-intel','8':'draft-history','9':'trends','0':'playoffs'};
   if (map[e.key]) switchTab(map[e.key]);
@@ -6326,6 +6315,8 @@ function closeRosterModal() {
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
+  const saved = localStorage.getItem('fo_tab');
+  if (saved) currentTab = saved;
   document.getElementById('tab-overview').classList.add('active');
   document.getElementById('loading').style.display='block';
   document.querySelectorAll('.tab-content').forEach(e=>{e.style.display='none';});
