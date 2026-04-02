@@ -978,6 +978,34 @@
       border-color: #1e2d42;
     }
 
+    /* ── SEASON STATS TABLE ──────────────────────────────────── */
+    .stats-tbl-wrap { overflow-x:auto; overflow-y:auto; max-height:72vh; border:1px solid var(--border); border-radius:10px; }
+    .stats-tbl { width:100%; border-collapse:collapse; font-size:.77rem; }
+    .stats-tbl thead th {
+      padding:7px 9px; background:var(--surface2); color:var(--muted);
+      font-size:.63rem; text-transform:uppercase; letter-spacing:.05em;
+      cursor:pointer; white-space:nowrap; border-bottom:2px solid var(--border);
+      position:sticky; top:0; z-index:2; user-select:none; transition:color .12s;
+    }
+    .stats-tbl thead th:hover { color:var(--text); }
+    .stats-tbl thead th.srt-on { color:var(--accent); }
+    .stats-tbl thead th.srt-on::after { content:' ▾'; font-size:.55rem; }
+    .stats-tbl thead th.srt-asc::after { content:' ▴'; font-size:.55rem; }
+    .stats-tbl thead .col-player { position:sticky; left:0; z-index:3; text-align:left; }
+    .stats-tbl tbody td { padding:5px 9px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .stats-tbl tbody tr:hover td { background:rgba(255,255,255,.025); }
+    .stats-tbl .col-player-cell {
+      position:sticky; left:0; background:var(--surface); z-index:1;
+      padding:5px 9px; min-width:158px;
+    }
+    .stats-tbl .pcell-inner { display:flex; align-items:center; gap:8px; }
+    .stats-tbl .pcell-hs { width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0; background:var(--surface2); }
+    .sv-hi  { color:#3fb950; font-weight:600; }
+    .sv-mid { color:var(--text); }
+    .sv-lo  { color:var(--muted); }
+    .sv-na  { color:rgba(139,148,158,.3); }
+    .sv-bad { color:#ef4444; font-weight:600; }
+
     /* ── ROSTER MODAL ─────────────────────────────────────────── */
     #roster-modal {
       position:fixed;inset:0;z-index:2000;
@@ -2608,9 +2636,12 @@ function chartOpts(yLabel) {
 
 // ── RENDER: PLAYERS TAB ───────────────────────────────────────
 // ── PLAYERS TAB STATE ─────────────────────────────────────────
-let playersView = 'cards'; // 'cards' | 'topn'
+let playersView = 'cards'; // 'cards' | 'topn' | 'stats'
 let topNFilter  = 10;
 const TOP_N_OPTIONS = [10,15,20,25,30,35,40,45,50];
+let statsSort       = { key:'fpts_pg', dir:-1 };
+let statsPosFilter  = 'ALL';
+let statsRowsCache  = null; // { rows, leagueId }
 
 function buildPlayersViewBtns() {
   const s = v =>
@@ -2619,7 +2650,8 @@ function buildPlayersViewBtns() {
       ? 'background:var(--accent);color:#fff;border-color:var(--accent)'
       : 'background:var(--surface2);color:var(--muted)');
   return `<button onclick="setPlayersView('cards')" style="${s('cards')}">Player Cards</button>` +
-         `<button onclick="setPlayersView('topn')"  style="${s('topn')}">Top N Tracker</button>`;
+         `<button onclick="setPlayersView('topn')"  style="${s('topn')}">Top N Tracker</button>` +
+         `<button onclick="setPlayersView('stats')" style="${s('stats')}">Season Stats</button>`;
 }
 
 function setPlayersView(view) {
@@ -2743,6 +2775,11 @@ function renderPlayersTab() {
     const wkOpts = fallbackWeeks.map(w=>`<option value="${w}" ${w===S.playersFilter.week?'selected':''}>Week ${w}</option>`).join('');
     controls = `<select id="weekSelect" onchange="loadPlayersWeek(parseInt(this.value))">${wkOpts}</select>
                 <div class="pos-filter">${posBtns}</div>`;
+  } else if (playersView === 'stats') {
+    const statPosBtns = ['ALL','QB','RB','WR','TE'].map(p=>
+      `<button class="pos-btn ${statsPosFilter===p?'active':''}" onclick="setStatsPosFilter('${p}')">${p}</button>`
+    ).join('');
+    controls = `<div class="pos-filter">${statPosBtns}</div>`;
   } else {
     controls = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:.78rem;color:var(--muted)">Cutoff:</span>
@@ -2762,6 +2799,8 @@ function renderPlayersTab() {
 
   if (playersView === 'cards') {
     loadPlayersWeek(S.playersFilter.week);
+  } else if (playersView === 'stats') {
+    loadStatsView();
   } else {
     document.getElementById('players-grid').className = '';
     document.getElementById('players-grid').innerHTML =
@@ -2896,6 +2935,266 @@ async function loadPlayersWeek(week) {
 
 function setPlayersPos(pos) {
   S.playersFilter.pos = pos;
+  renderPlayersTab();
+}
+
+// ── SEASON STATS VIEW ─────────────────────────────────────────
+async function loadStatsView() {
+  const league = ld();
+  if (!league) return;
+  const grid = document.getElementById('players-grid');
+  if (!grid) return;
+
+  // Use cache if same league
+  if (statsRowsCache && statsRowsCache.leagueId === S.currentLeagueId) {
+    renderStatsTable();
+    return;
+  }
+
+  const weeks = league.completedWeeks;
+  if (!weeks.length) {
+    grid.className = '';
+    grid.innerHTML = '<div style="color:var(--muted);padding:24px">No completed weeks yet.</div>';
+    return;
+  }
+
+  grid.innerHTML = '<div class="inline-loading"><div class="spinner" style="margin:0 auto 8px"></div>Aggregating season stats…</div>';
+
+  const allWeekStats = await Promise.all(weeks.map(w => fetchWeekStats(league.season, w.week)));
+  const ppr    = (league.league.scoring_settings && league.league.scoring_settings.rec) || 0;
+  const ptKey  = ppr >= 1 ? 'pts_ppr' : ppr >= 0.5 ? 'pts_half_ppr' : 'pts_std';
+  const FIELDS = ['pass_att','pass_cmp','pass_yd','pass_td','pass_int','pass_air_yd',
+                  'rush_att','rush_yd','rush_td','rush_fd',
+                  'rec','rec_tgt','rec_yd','rec_td','rec_air_yd','rec_yac',
+                  'off_snp','tm_off_snp','pts_ppr','pts_half_ppr','pts_std'];
+
+  // Aggregate per player across all weeks
+  const agg = {};
+  allWeekStats.forEach(ws => {
+    if (!ws) return;
+    Object.entries(ws).forEach(([pid, st]) => {
+      if (!st || typeof st !== 'object') return;
+      const meta = S.playersMeta[String(pid)];
+      if (!meta || !['QB','RB','WR','TE'].includes(meta.pos)) return;
+      if (!agg[pid]) { agg[pid] = { gp:0 }; FIELDS.forEach(f => agg[pid][f] = 0); }
+      const active = (st.off_snp > 0) || ((st[ptKey]||0) > 0) || (st.pass_att > 0);
+      if (active) agg[pid].gp++;
+      FIELDS.forEach(f => { if (st[f]) agg[pid][f] += st[f]; });
+    });
+  });
+
+  // Roster lookup
+  const playerOwner = {};
+  Object.values(league.rosterMap).forEach(r => r.players.forEach(pid => { playerOwner[String(pid)] = r.teamName; }));
+
+  // Team totals for share stats (all players in agg, not just rostered)
+  const teamTot = {};
+  Object.entries(agg).forEach(([pid, st]) => {
+    const meta = S.playersMeta[pid];
+    if (!meta || !meta.team || meta.team === 'FA') return;
+    const t = meta.team;
+    if (!teamTot[t]) teamTot[t] = { tgt:0, att:0, airYd:0, tmSnp:0 };
+    teamTot[t].tgt   += st.rec_tgt   || 0;
+    teamTot[t].att   += st.rush_att  || 0;
+    teamTot[t].airYd += st.rec_air_yd|| 0;
+  });
+
+  // Build rows (rostered players only, must have played)
+  const rows = Object.entries(agg)
+    .filter(([pid, st]) => playerOwner[pid] && st.gp > 0)
+    .map(([pid, st]) => {
+      const meta = S.playersMeta[pid];
+      if (!meta) return null;
+      const fc   = S.fcBySleeperId[pid];
+      const gp   = st.gp;
+      const team = meta.team || '';
+      const tt   = teamTot[team] || {};
+      const fpts = st[ptKey] || 0;
+      const n    = v => v || 0;
+      return {
+        pid, name:meta.name, pos:meta.pos, team, age:meta.age||null,
+        fcVal: fc ? fc.value : 0, owner:playerOwner[pid], gp,
+        // season totals
+        pass_att:n(st.pass_att), pass_cmp:n(st.pass_cmp), pass_yd:n(st.pass_yd),
+        pass_td:n(st.pass_td),   pass_int:n(st.pass_int),
+        rush_att:n(st.rush_att), rush_yd:n(st.rush_yd),
+        rush_td:n(st.rush_td),   rush_fd:n(st.rush_fd),
+        rec_tgt:n(st.rec_tgt),   rec:n(st.rec),
+        rec_yd:n(st.rec_yd),     rec_td:n(st.rec_td),
+        rec_air_yd:n(st.rec_air_yd), rec_yac:n(st.rec_yac), fpts,
+        // per-game
+        fpts_pg:    fpts / gp,
+        pass_yd_pg: n(st.pass_yd)  / gp,
+        rush_yd_pg: n(st.rush_yd)  / gp,
+        rec_yd_pg:  n(st.rec_yd)   / gp,
+        tgt_pg:     n(st.rec_tgt)  / gp,
+        rec_pg:     n(st.rec)      / gp,
+        att_pg:     n(st.rush_att) / gp,
+        air_yd_pg:  n(st.rec_air_yd)/gp,
+        // advanced ratios
+        cmp_pct:   st.pass_att   > 0 ? st.pass_cmp   / st.pass_att   : null,
+        ypa:       st.pass_att   > 0 ? st.pass_yd    / st.pass_att   : null,
+        ypc:       st.rush_att   > 0 ? st.rush_yd    / st.rush_att   : null,
+        ypt:       st.rec_tgt    > 0 ? st.rec_yd     / st.rec_tgt    : null,
+        ypr:       st.rec        > 0 ? st.rec_yd     / st.rec        : null,
+        catch_pct: st.rec_tgt    > 0 ? st.rec        / st.rec_tgt    : null,
+        racr:      st.rec_air_yd > 0 ? st.rec_yd     / st.rec_air_yd : null,
+        yac_pr:    st.rec        > 0 ? st.rec_yac    / st.rec        : null,
+        snap_pct:  st.tm_off_snp > 0 ? st.off_snp    / st.tm_off_snp : null,
+        tgt_share: tt.tgt        > 0 ? st.rec_tgt    / tt.tgt        : null,
+        opp_share: (tt.tgt+tt.att)>0 ?(n(st.rec_tgt)+n(st.rush_att))/(tt.tgt+tt.att): null,
+        air_share: tt.airYd      > 0 ? st.rec_air_yd / tt.airYd      : null,
+      };
+    }).filter(Boolean);
+
+  statsRowsCache = { rows, leagueId: S.currentLeagueId };
+  renderStatsTable();
+}
+
+function renderStatsTable() {
+  const grid = document.getElementById('players-grid');
+  if (!grid || !statsRowsCache) return;
+
+  const pos  = statsPosFilter;
+  let rows   = statsRowsCache.rows;
+  if (pos !== 'ALL') rows = rows.filter(r => r.pos === pos);
+
+  // Column definitions per position group
+  const pct  = v => v != null ? (v*100).toFixed(1)+'%' : '—';
+  const d1   = v => v != null && v > 0 ? v.toFixed(1) : '—';
+  const d2   = v => v != null && v > 0 ? v.toFixed(2) : '—';
+  const tot  = v => v != null && v > 0 ? Math.round(v).toString() : '—';
+  const val  = v => v > 0 ? v.toLocaleString() : '—';
+
+  const COLS = {
+    ALL: [
+      { key:'fpts_pg',   label:'Fpts/G',    tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+      { key:'gp',        label:'GP',         tip:'Games played this season',                         fmt:tot     },
+      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
+      { key:'fpts',      label:'Fpts',       tip:'Total fantasy points this season',                 fmt:d1,  hi:1 },
+      { key:'fcVal',     label:'FC Val',     tip:'FantasyCalc dynasty trade value',                  fmt:val, hi:1 },
+    ],
+    QB: [
+      { key:'gp',        label:'GP',         tip:'Games played',                                     fmt:tot     },
+      { key:'cmp_pct',   label:'Cmp%',       tip:'Completion percentage',                            fmt:pct, hi:1 },
+      { key:'pass_yd_pg',label:'Pass Yds/G', tip:'Passing yards per game',                           fmt:d1,  hi:1 },
+      { key:'ypa',       label:'YPA',        tip:'Yards per pass attempt',                           fmt:d1,  hi:1 },
+      { key:'pass_td',   label:'Pass TD',    tip:'Total passing touchdowns',                         fmt:tot, hi:1 },
+      { key:'pass_int',  label:'INT',        tip:'Total interceptions thrown',                       fmt:tot, hi:-1 },
+      { key:'rush_yd_pg',label:'Rush Yds/G', tip:'Rushing yards per game',                           fmt:d1,  hi:1 },
+      { key:'rush_td',   label:'Rush TD',    tip:'Rushing touchdowns',                               fmt:tot, hi:1 },
+      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',     tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+    ],
+    RB: [
+      { key:'gp',        label:'GP',         tip:'Games played',                                     fmt:tot     },
+      { key:'att_pg',    label:'Att/G',      tip:'Rush attempts per game',                           fmt:d1,  hi:1 },
+      { key:'rush_yd_pg',label:'Rush Yds/G', tip:'Rushing yards per game',                           fmt:d1,  hi:1 },
+      { key:'ypc',       label:'YPC',        tip:'Yards per carry',                                  fmt:d1,  hi:1 },
+      { key:'rush_td',   label:'Rush TD',    tip:'Rushing touchdowns',                               fmt:tot, hi:1 },
+      { key:'rush_fd',   label:'1st Dns',    tip:'Rushing first downs',                              fmt:tot, hi:1 },
+      { key:'tgt_pg',    label:'Tgt/G',      tip:'Targets per game',                                 fmt:d1,  hi:1 },
+      { key:'rec_pg',    label:'Rec/G',      tip:'Receptions per game',                              fmt:d1,  hi:1 },
+      { key:'rec_yd_pg', label:'Rec Yds/G',  tip:'Receiving yards per game',                         fmt:d1,  hi:1 },
+      { key:'opp_share', label:'Opp%',       tip:'Opportunity share: (rush att + tgt) ÷ team total', fmt:pct, hi:1 },
+      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',     tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+    ],
+    WR: [
+      { key:'gp',        label:'GP',         tip:'Games played',                                     fmt:tot     },
+      { key:'tgt_pg',    label:'Tgt/G',      tip:'Targets per game',                                 fmt:d1,  hi:1 },
+      { key:'rec_pg',    label:'Rec/G',      tip:'Receptions per game',                              fmt:d1,  hi:1 },
+      { key:'catch_pct', label:'Catch%',     tip:'Catch rate (receptions ÷ targets)',                fmt:pct, hi:1 },
+      { key:'rec_yd_pg', label:'Yds/G',      tip:'Receiving yards per game',                         fmt:d1,  hi:1 },
+      { key:'ypr',       label:'YPR',        tip:'Yards per reception',                              fmt:d1,  hi:1 },
+      { key:'ypt',       label:'YPT',        tip:'Yards per target',                                 fmt:d1,  hi:1 },
+      { key:'rec_td',    label:'TD',         tip:'Receiving touchdowns',                             fmt:tot, hi:1 },
+      { key:'air_yd_pg', label:'AirYds/G',   tip:'Air yards per game (depth of target)',             fmt:d1,  hi:1 },
+      { key:'racr',      label:'RACR',       tip:'Receiver Air Conversion Ratio: rec yds ÷ air yds. >1.0 = YAC-heavy, <0.7 = limited YAC', fmt:d2, hi:1 },
+      { key:'tgt_share', label:'Tgt%',       tip:'Share of team targets',                            fmt:pct, hi:1 },
+      { key:'air_share', label:'AirYd%',     tip:'Share of team air yards',                          fmt:pct, hi:1 },
+      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',     tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+    ],
+  };
+  COLS.TE = COLS.WR;
+  const cols = COLS[pos] || COLS.ALL;
+
+  // Sort
+  const { key: sk, dir: sd } = statsSort;
+  rows = [...rows].sort((a, b) => {
+    const av = a[sk] ?? (sd > 0 ? Infinity : -Infinity);
+    const bv = b[sk] ?? (sd > 0 ? Infinity : -Infinity);
+    return sd > 0 ? av - bv : bv - av;
+  });
+
+  // Percentile thresholds per column for coloring
+  const pct75 = {}, pct25 = {};
+  cols.forEach(c => {
+    const vals = rows.map(r => r[c.key]).filter(v => v != null && v > 0).sort((a,b) => a-b);
+    pct75[c.key] = vals[Math.floor(vals.length * 0.75)] ?? 0;
+    pct25[c.key] = vals[Math.floor(vals.length * 0.25)] ?? 0;
+  });
+
+  function cellCls(c, v) {
+    if (v == null || v === 0) return 'sv-na';
+    if (c.hi === -1) return v <= pct25[c.key] ? 'sv-hi' : v >= pct75[c.key] ? 'sv-bad' : 'sv-mid';
+    if (c.hi ===  1) return v >= pct75[c.key] ? 'sv-hi' : v <= pct25[c.key] ? 'sv-lo'  : 'sv-mid';
+    return 'sv-mid';
+  }
+
+  const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
+  const isSortAsc = sd > 0;
+
+  let thead = `<tr>
+    <th class="col-player" onclick="sortStats('name')" style="text-align:left">Player</th>
+    <th onclick="sortStats('owner')" style="text-align:left;min-width:90px">Owner</th>
+    ${pos==='ALL'?'<th>Pos</th>':''}
+    ${cols.map(c=>{
+      const on = sk===c.key;
+      return `<th class="${on?(isSortAsc?'srt-on srt-asc':'srt-on'):''}" onclick="sortStats('${c.key}')" title="${c.tip||''}" style="text-align:right">${c.label}</th>`;
+    }).join('')}
+  </tr>`;
+
+  let tbody = rows.map(r => {
+    const pc = posColors[r.pos] || 'var(--muted)';
+    const ageTxt = r.age ? `<span style="font-size:.62rem;color:var(--muted)"> · ${r.age}yr</span>` : '';
+    const playerCell = `<td class="col-player-cell">
+      <div class="pcell-inner">
+        <img class="pcell-hs" src="${HS_URL(r.pid)}" onerror="imgFallback(this,'${r.pos}')" loading="lazy">
+        <div>
+          <div style="font-weight:600;font-size:.8rem;line-height:1.2">${r.name}${ageTxt}</div>
+          <div style="display:flex;gap:4px;margin-top:2px;align-items:center">
+            <span class="pos-badge pos-${r.pos}" style="font-size:.58rem;padding:1px 4px">${r.pos}</span>
+            <span style="font-size:.65rem;color:var(--muted)">${r.team||'—'}</span>
+          </div>
+        </div>
+      </div>
+    </td>`;
+    const ownerCell = `<td style="font-size:.7rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis">${r.owner}</td>`;
+    const posCell   = pos==='ALL' ? `<td style="text-align:center"><span class="pos-badge pos-${r.pos}" style="font-size:.58rem;padding:1px 4px">${r.pos}</span></td>` : '';
+    const dataCells = cols.map(c => `<td class="${cellCls(c,r[c.key])}" style="text-align:right">${c.fmt(r[c.key])}</td>`).join('');
+    return `<tr>${playerCell}${ownerCell}${posCell}${dataCells}</tr>`;
+  }).join('');
+
+  const note = `<div style="font-size:.71rem;color:var(--muted);margin:0 0 8px">
+    ${rows.length} rostered players with game action · Season totals &amp; per-game rates ·
+    <span style="color:#3fb950">Green</span> = top 25% · <span style="color:var(--muted)">Faded</span> = bottom 25% ·
+    Click any column to sort
+  </div>`;
+
+  grid.className = '';
+  grid.innerHTML = note + `<div class="stats-tbl-wrap"><table class="stats-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
+}
+
+function sortStats(key) {
+  statsSort.dir = statsSort.key === key ? statsSort.dir * -1 : -1;
+  statsSort.key = key;
+  renderStatsTable();
+}
+
+function setStatsPosFilter(pos) {
+  statsPosFilter = pos;
   renderPlayersTab();
 }
 
@@ -5525,6 +5824,7 @@ function renderDraftHistory() {
 }
 
 function renderAll() {
+  statsRowsCache = null; // invalidate on season change
   renderOverview();
   renderPowerRankings();
   renderFantasyWrapped();
