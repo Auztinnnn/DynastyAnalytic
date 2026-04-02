@@ -86,7 +86,7 @@
     .pos-c { color: var(--green); } .neg { color: var(--red); } .neutral { color: var(--muted); }
 
     /* CONTENDER TIER */
-    .tier-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: .7rem; font-weight: 700; }
+    .tier-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: .7rem; font-weight: 700; overflow: hidden; }
 
     /* RANK PILL */
     .rank-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 22px; border-radius: 4px; font-size: .7rem; font-weight: 700; padding: 0 6px; }
@@ -1239,7 +1239,7 @@
   <div id="tab-playoffs" class="tab-content"><div id="playoffs-content"></div></div>
 </main>
 
-<!-- ── ROSTER MODAL ───────────────────────────────────────── -->
+<!-- ── ROSTER / PLAYER MODAL ─────────────────────────────── -->
 <div id="roster-modal" onclick="if(event.target===this)closeRosterModal()">
   <div class="rm-inner">
     <button class="rm-close-btn" onclick="closeRosterModal()">✕</button>
@@ -1271,6 +1271,7 @@ let S = {
   pickOwnership: {},      // { "season_round_origRosterId": { currentOwner, originalOwner, season, round } }
   tradeA: { rosterId: null, players: [], picks: [] },
   tradeB: { rosterId: null, players: [], picks: [] },
+  rostersSelected: null,
   powerChart: null,
   statsCache: {},         // `${season}_${week}` -> stats object
   playersMeta: {},        // sleeperId -> { name, pos, team, age } from FantasyCalc
@@ -1349,10 +1350,10 @@ function rankPill(rank, total) {
 
 function contenderTier(rank, total) {
   const p = rank/total;
-  if (p<=.25) return { label:'Contender',       color:'#16a34a', bg:'rgba(22,163,74,.15)' };
-  if (p<=.5)  return { label:'Frisky',           color:'#d97706', bg:'rgba(217,119,6,.15)' };
-  if (p<=.75) return { label:'Rebuilding',       color:'#dc2626', bg:'rgba(220,38,38,.15)' };
-  return        { label:'Trust the Process',      color:'#94a3b8', bg:'rgba(148,163,184,.1)' };
+  if (p<=.25) return { label:'Contender',       color:'#16a34a', bg:'rgba(22,163,74,.28)' };
+  if (p<=.5)  return { label:'Frisky',           color:'#d97706', bg:'rgba(217,119,6,.28)' };
+  if (p<=.75) return { label:'Rebuilding',       color:'#dc2626', bg:'rgba(220,38,38,.28)' };
+  return        { label:'Trust the Process',      color:'#94a3b8', bg:'rgba(148,163,184,.2)' };
 }
 
 // ── LOAD ──────────────────────────────────────────────────────
@@ -4214,12 +4215,12 @@ function mveTeamProfile(rosterId, league) {
 
 // ── CLASSIFICATION STYLES (single source of truth) ────────────
 const CLASS_STYLES = {
-  'Contender':         { color:'#16a34a', bg:'rgba(22,163,74,.15)',   border:'rgba(22,163,74,.45)'  },
-  'Fringe':            { color:'#d97706', bg:'rgba(217,119,6,.15)',   border:'rgba(217,119,6,.55)'  },
-  'Productive Middle': { color:'#0ea5e9', bg:'rgba(14,165,233,.12)',  border:'rgba(14,165,233,.4)'  },
-  'Retool':            { color:'#6366f1', bg:'rgba(99,102,241,.15)',  border:'rgba(99,102,241,.45)' },
-  'Rebuild':           { color:'#a855f7', bg:'rgba(168,85,247,.15)',  border:'rgba(168,85,247,.45)' },
-  'Rebuilding':        { color:'#dc2626', bg:'rgba(220,38,38,.15)',   border:'rgba(220,38,38,.45)'  },
+  'Contender':         { color:'#16a34a', bg:'rgba(22,163,74,.28)',   border:'rgba(22,163,74,.55)'  },
+  'Fringe':            { color:'#d97706', bg:'rgba(217,119,6,.28)',   border:'rgba(217,119,6,.65)'  },
+  'Productive Middle': { color:'#0ea5e9', bg:'rgba(14,165,233,.24)',  border:'rgba(14,165,233,.5)'  },
+  'Retool':            { color:'#6366f1', bg:'rgba(99,102,241,.28)',  border:'rgba(99,102,241,.55)' },
+  'Rebuild':           { color:'#a855f7', bg:'rgba(168,85,247,.28)',  border:'rgba(168,85,247,.55)' },
+  'Rebuilding':        { color:'#dc2626', bg:'rgba(220,38,38,.28)',   border:'rgba(220,38,38,.55)'  },
 };
 
 // ── TUNING KNOBS for classification (adjust here) ─────────────
@@ -4895,7 +4896,7 @@ function renderLeagueIntel() {
       <td style="color:#3fb950">${p.rbVal.toLocaleString()}</td>
       <td style="color:#58a6ff">${p.wrVal.toLocaleString()}</td>
       <td style="color:#fb8500">${p.teVal.toLocaleString()}</td>
-      <td><span class="archetype-badge" style="background:${cl.bg};color:${cl.color};font-size:.62rem">${cl.label}</span></td>
+      <td><span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border};font-size:.62rem">${cl.label}</span></td>
     </tr>`;
   });
 
@@ -5961,6 +5962,219 @@ function renderDraftHistory() {
     </div>`;
 }
 
+// ── RENDER: ROSTERS ───────────────────────────────────────────
+function renderRosters() {
+  const league = ld();
+  if (!league) return;
+  const el = document.getElementById('rosters-content');
+  if (!el) return;
+
+  const teams = Object.values(league.rosterMap).sort((a,b) => a.teamName.localeCompare(b.teamName));
+  if (!S.rostersSelected || !league.rosterMap[S.rostersSelected]) {
+    S.rostersSelected = teams[0]?.rosterId;
+  }
+
+  const opts = teams.map(t =>
+    `<option value="${t.rosterId}" ${t.rosterId == S.rostersSelected ? 'selected' : ''}>${t.teamName}</option>`
+  ).join('');
+
+  const team = league.rosterMap[parseInt(S.rostersSelected)];
+  const ppr  = (league.league.scoring_settings?.rec) || 0;
+  const ptKey = ptsKey(ppr);
+
+  // Build player rows grouped by position
+  const SKILL = ['QB','RB','WR','TE'];
+  const playersByPos = {};
+  SKILL.forEach(p => playersByPos[p] = []);
+  const other = [];
+
+  (team?.players || []).forEach(pid => {
+    const fc  = S.fcBySleeperId[String(pid)];
+    const meta = S.playersMeta[String(pid)];
+    const pos  = fc?.player?.position || meta?.pos || '?';
+    const name = fc?.player?.name     || meta?.name || `Player ${pid}`;
+    const age  = fc?.player?.age      || meta?.age  || null;
+    const mv   = mvePlayer(pid, league);
+    const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+    const nflTeam = fc?.player?.team || meta?.team || '';
+
+    const card = `<div class="player-row" style="cursor:pointer;gap:10px;padding:8px 10px" onclick="openPlayerModal('${pid}')">
+      ${hsImg(pid, 36, pos)}
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:.84rem;font-weight:600;color:var(--text)">${name}</span>
+          <span class="pos-badge pos-${pos}">${pos}</span>
+          ${nflTeam ? `<span class="nfl-team">${nflTeam}</span>` : ''}
+          ${age ? `<span style="font-size:.68rem;color:var(--muted)">Age ${age}</span>` : ''}
+        </div>
+        ${mv ? `<div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap">
+          <span style="font-size:.7rem;color:var(--muted)">T${mv.tier}</span>
+          <span style="font-size:.75rem;font-weight:700;color:var(--accent)">${mv.neutral.toLocaleString()}</span>
+          <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}">${mv.actionTag}</span>
+          <span style="font-size:.65rem;color:var(--muted)">${mv.roleLabel}</span>
+        </div>` : `<div style="font-size:.7rem;color:var(--muted);margin-top:2px">No dynasty value</div>`}
+      </div>
+    </div>`;
+
+    if (SKILL.includes(pos)) playersByPos[pos].push(card);
+    else other.push(card);
+  });
+
+  // Pick capital section
+  const teamPicks = Object.values(S.pickOwnership)
+    .filter(p => p.currentOwner === parseInt(S.rostersSelected))
+    .sort((a,b) => parseInt(a.season)-parseInt(b.season) || a.round-b.round);
+
+  const pickItems = teamPicks.map(pk => {
+    const rc = pickRoundColor(pk.round);
+    const origTeam = pk.originalOwner !== pk.currentOwner
+      ? (league.rosterMap[pk.originalOwner]?.teamName || `Team ${pk.originalOwner}`)
+      : null;
+    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border)">
+      <span class="pick-badge" style="background:rgba(210,153,34,.12);color:${rc};border:1px solid ${rc}44;width:22px;height:22px;font-size:.65rem;font-weight:800;border-radius:4px;display:inline-flex;align-items:center;justify-content:center">${pk.round}</span>
+      <span style="font-size:.8rem;color:var(--text);font-weight:600">'${pk.season.toString().slice(2)} Round ${pk.round}</span>
+      ${origTeam ? `<span style="font-size:.68rem;color:var(--muted)">(via ${origTeam})</span>` : ''}
+    </div>`;
+  }).join('');
+
+  const posSection = pos => {
+    const cards = playersByPos[pos];
+    if (!cards.length) return '';
+    return `<div style="margin-bottom:16px">
+      <div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--border)">${pos} (${cards.length})</div>
+      ${cards.join('')}
+    </div>`;
+  };
+
+  el.innerHTML = `
+    <div class="section-title" style="margin-bottom:16px">Rosters</div>
+    <div style="margin-bottom:20px">
+      <select style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-size:.85rem;min-width:220px"
+              onchange="S.rostersSelected=parseInt(this.value);renderRosters()">
+        ${opts}
+      </select>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+      <div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:.78rem;font-weight:700;color:var(--text)">Players</div>
+          ${SKILL.map(posSection).join('')}
+          ${other.length ? `<div style="margin-bottom:8px"><div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--border)">Other (${other.length})</div>${other.join('')}</div>` : ''}
+          ${!team?.players?.length ? `<div style="padding:20px;text-align:center;color:var(--muted);font-size:.82rem">No players on roster</div>` : ''}
+        </div>
+      </div>
+
+      <div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:.78rem;font-weight:700;color:var(--text)">Draft Capital</div>
+          ${pickItems || `<div style="padding:14px;text-align:center;color:var(--muted);font-size:.82rem">No future picks</div>`}
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:.72rem;color:var(--muted);margin-top:10px">Click any player to see their stats by season.</div>
+  `;
+}
+
+// ── PLAYER STATS MODAL ────────────────────────────────────────
+async function openPlayerModal(pid) {
+  const league = ld();
+  const fc   = S.fcBySleeperId[String(pid)];
+  const meta = S.playersMeta[String(pid)] || {};
+  const name = fc?.player?.name     || meta.name || `Player ${pid}`;
+  const pos  = fc?.player?.position || meta.pos  || '?';
+  const team = fc?.player?.team     || meta.team || '';
+  const age  = fc?.player?.age      || meta.age  || null;
+  const mv   = league ? mvePlayer(pid, league) : null;
+  const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const mvReasons = mv && league ? mveExplainPlayer(mv, league) : [];
+
+  document.getElementById('roster-modal-content').innerHTML = `
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:20px;padding-right:8px">
+      ${hsLg(pid, pos)}
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:4px">
+          <span class="pos-badge pos-${pos}">${pos}</span>
+          ${team ? `<span class="nfl-team">${team}</span>` : ''}
+          ${age ? `<span style="font-size:.72rem;color:var(--muted)">Age ${age}</span>` : ''}
+        </div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:6px">${name}</div>
+        ${mv ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+          <span style="font-size:.72rem;color:var(--muted);background:var(--surface2);border-radius:3px;padding:1px 5px">T${mv.tier}</span>
+          <span style="font-size:.9rem;font-weight:700;color:var(--accent)">${mv.neutral.toLocaleString()}</span>
+          <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}">${mv.actionTag}</span>
+          <span style="font-size:.68rem;color:var(--muted)">${mv.roleLabel}</span>
+        </div>` : ''}
+        ${mvReasons.length ? `<div class="explain-chips">${mvReasons.slice(0,4).map(r=>`<span class="explain-chip">${r}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>
+    <div id="player-modal-stats">
+      <div class="inline-loading" style="padding:20px 0">
+        <div class="spinner" style="margin:0 auto 8px"></div>Loading season stats…
+      </div>
+    </div>
+  `;
+
+  document.getElementById('roster-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  if (!league) return;
+
+  const ppr   = (league.league.scoring_settings?.rec) || 0;
+  const ptKey = ptsKey(ppr);
+
+  const chainYears = S.seasonChain.map(s => String(s.season || league.season)).filter(Boolean);
+  const years = [...new Set([...chainYears, String(league.season)])].sort((a,b) => parseInt(b)-parseInt(a));
+
+  const statsEl = document.getElementById('player-modal-stats');
+  const rows = [];
+
+  for (const year of years) {
+    const key = `season_${year}`;
+    if (!S.statsCache[key]) {
+      try {
+        const data = await api(`/stats/nfl/regular/${year}`);
+        S.statsCache[key] = data || {};
+      } catch(e) {
+        S.statsCache[key] = {};
+      }
+    }
+    const st = S.statsCache[key]?.[String(pid)];
+    if (!st) continue;
+
+    const pts = st[ptKey] || st.pts_ppr || st.pts_half_ppr || st.pts_std || 0;
+    if (!pts) continue;
+    const gp  = st.gp || st.games_played || '—';
+    const avg = (pts && gp && gp !== '—') ? (pts / gp).toFixed(1) : '—';
+    const sl  = statLine(st, pos);
+
+    rows.push(`<tr>
+      <td style="font-weight:600">${year}</td>
+      <td>${gp}</td>
+      <td style="color:var(--accent);font-weight:700">${fmtP(pts)}</td>
+      <td>${avg}</td>
+      <td style="font-size:.72rem;color:var(--muted);max-width:180px;white-space:normal">${sl || '—'}</td>
+    </tr>`);
+  }
+
+  if (!rows.length) {
+    statsEl.innerHTML = `<div style="color:var(--muted);font-size:.82rem;text-align:center;padding:16px 0">No season stats available from Sleeper.</div>`;
+    return;
+  }
+
+  statsEl.innerHTML = `
+    <div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Season Stats</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Year</th><th>GP</th><th>Total Pts</th><th>Avg/G</th><th>Stats</th>
+        </tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderAll() {
   statsRowsCache = null; // invalidate on season change
   renderOverview();
@@ -5968,6 +6182,7 @@ function renderAll() {
   renderFantasyWrapped();
   if (currentTab==='players') renderPlayersTab();
   if (currentTab==='trade')   renderTradeCalculator();
+  if (currentTab==='rosters') renderRosters();
   updateSidebarSeason();
   // Defer slightly so all innerHTML has settled before querying titles
   setTimeout(addCaptureButtons, 50);
@@ -5999,7 +6214,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('#main-nav button').forEach(e=>e.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  const labels={ overview:'Overview', power:'Power Rankings', players:'Players', trade:'Trade Calculator', wrapped:'Fantasy Wrapped', franchise:'Franchise Intel', 'league-intel':'League Intel', 'draft-history':'Draft History', playoffs:'🏆 Playoffs' };
+  const labels={ overview:'Overview', power:'Power Rankings', players:'Players', trade:'Trade Calculator', wrapped:'Fantasy Wrapped', franchise:'Franchise Intel', 'league-intel':'League Intel', 'draft-history':'Draft History', trends:'Market Trends', rosters:'Rosters', playoffs:'🏆 Playoffs' };
   document.querySelectorAll('#main-nav button').forEach(b=>{ if(b.textContent.trim()===labels[name]) b.classList.add('active'); });
   currentTab=name;
   if (name==='trade'&&S.currentLeagueId)        renderTradeCalculator();
@@ -6010,6 +6225,7 @@ function switchTab(name) {
   if (name==='playoffs'&&S.currentLeagueId)     renderPlayoffs();
   if (name==='rosters'&&S.currentLeagueId)  renderRosters();
   if (name==='trends')  renderTrendsTab();
+  if (name==='rosters'&&S.currentLeagueId) renderRosters();
   setTimeout(addCaptureButtons, 60);
 }
 
