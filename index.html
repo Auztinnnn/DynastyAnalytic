@@ -2859,7 +2859,7 @@ function drawRoster(side, rosterId) {
   const players=roster.players.map(pid=>{
     const fc=S.fcBySleeperId[String(pid)];
     return { pid, name:fc?fc.player.name:'Unknown', pos:fc?fc.player.position:'?', team:fc&&fc.player.team?fc.player.team:'FA', value:fc?fc.value:0 };
-  }).sort((a,b)=>posOrder(a.pos)-posOrder(b.pos)||b.value-a.value);
+  }).filter(p=>p.pos!=='K'&&p.pos!=='DEF').sort((a,b)=>posOrder(a.pos)-posOrder(b.pos)||b.value-a.value);
 
   document.getElementById('roster'+side).innerHTML=players.map(p=>{
     const sel=ts.players.includes(p.pid);
@@ -4035,7 +4035,6 @@ function renderFranchiseIntel() {
   const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
 
   let html = `<div id="franchise-snapshot"><div class="section-title">Franchise Intelligence ${tip('Deep dynasty health cards for every team. Uses MVE (Multi-Variable Evaluation) — FantasyCalc values adjusted for age curve, player tier, role, positional scarcity, and KTC market sentiment. Tiers reflect absolute dynasty strength, not just rank in this league.')}
-    <button class="capture-btn" id="franchise-screenshot-mode-btn" onclick="toggleFranchiseScreenshotMode(this)" title="Toggle screenshot layout (3-column, hides ghosted teams)">🖼 Screenshot Mode</button>
     <button class="capture-btn" onclick="captureById('franchise-snapshot',this)" title="Save franchise cards as image">📸 Share</button>
     <span class="section-note">MVE layered valuation · ${S.ktcAvailable?'FantasyCalc + KTC overlay':'FantasyCalc only'}</span>
   </div><div class="franchise-grid" id="franchise-grid">`;
@@ -4369,7 +4368,7 @@ function renderLeagueIntel() {
   const best   = k => [...enriched].sort((a,b)=>b[k]-a[k])[0];
   const bestContender = [...enriched].sort((a,b)=>b.starterValue-a.starterValue)[0];
   const rebuilders    = enriched.filter(p=>p.classification.label.includes('Rebuild'));
-  const bestRebuild   = rebuilders.length ? [...rebuilders].sort((a,b)=>b.pickValue-a.pickValue)[0] : null;
+  const bestRebuild   = rebuilders.length ? [...rebuilders].sort((a,b)=>b.totalValue-a.totalValue)[0] : null;
   const mostLiquid    = best('avgLiq');
   const mostPicks     = best('pickValue');
   const withAge       = enriched.filter(p => p.weightedAge > 0);
@@ -4390,7 +4389,7 @@ function renderLeagueIntel() {
   html += `<div class="section-title">League Archetypes</div>
   <div class="card-grid">
     ${aCard('Best Contender',    bestContender, `${bestContender.starterValue.toLocaleString()} starter val`)}
-    ${bestRebuild ? aCard('Best Rebuild', bestRebuild, `${bestRebuild.pickValue.toLocaleString()} pick capital`) : ''}
+    ${bestRebuild ? aCard('Best Rebuild', bestRebuild, `${bestRebuild.totalValue.toLocaleString()} total val`) : ''}
     ${aCard('Most Liquid',       mostLiquid,  `Avg liq ${mostLiquid.avgLiq.toFixed(0)}`)}
     ${aCard('Most Pick Capital', mostPicks,   mostPicks.pickValue.toLocaleString()+' total')}
     ${aCard('Youngest Roster',   youngest,    `Avg age ${youngest.weightedAge}`)}
