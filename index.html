@@ -4215,12 +4215,12 @@ function mveTeamProfile(rosterId, league) {
 
 // ── CLASSIFICATION STYLES (single source of truth) ────────────
 const CLASS_STYLES = {
-  'Contender':         { color:'#16a34a', bg:'rgba(22,163,74,.28)',   border:'rgba(22,163,74,.55)'  },
-  'Fringe':            { color:'#d97706', bg:'rgba(217,119,6,.28)',   border:'rgba(217,119,6,.65)'  },
-  'Productive Middle': { color:'#0ea5e9', bg:'rgba(14,165,233,.24)',  border:'rgba(14,165,233,.5)'  },
-  'Retool':            { color:'#6366f1', bg:'rgba(99,102,241,.28)',  border:'rgba(99,102,241,.55)' },
-  'Rebuild':           { color:'#a855f7', bg:'rgba(168,85,247,.28)',  border:'rgba(168,85,247,.55)' },
-  'Rebuilding':        { color:'#dc2626', bg:'rgba(220,38,38,.28)',   border:'rgba(220,38,38,.55)'  },
+  'Contender':         { color:'#4ade80', bg:'#1c3a25', border:'rgba(74,222,128,.45)'  },
+  'Fringe':            { color:'#fbbf24', bg:'#3a2507', border:'rgba(251,191,36,.45)'  },
+  'Productive Middle': { color:'#38bdf8', bg:'#0e2d40', border:'rgba(56,189,248,.45)'  },
+  'Retool':            { color:'#818cf8', bg:'#1f2047', border:'rgba(129,140,248,.45)' },
+  'Rebuild':           { color:'#c084fc', bg:'#2d1445', border:'rgba(192,132,252,.45)' },
+  'Rebuilding':        { color:'#f87171', bg:'#3d1010', border:'rgba(248,113,113,.45)' },
 };
 
 // ── TUNING KNOBS for classification (adjust here) ─────────────
@@ -5982,7 +5982,7 @@ function renderRosters() {
   const ppr  = (league.league.scoring_settings?.rec) || 0;
   const ptKey = ptsKey(ppr);
 
-  // Build player rows grouped by position
+  // Build player objects grouped by position, then sort each group by dynasty value
   const SKILL = ['QB','RB','WR','TE'];
   const playersByPos = {};
   SKILL.forEach(p => playersByPos[p] = []);
@@ -5992,13 +5992,22 @@ function renderRosters() {
     const fc  = S.fcBySleeperId[String(pid)];
     const meta = S.playersMeta[String(pid)];
     const pos  = fc?.player?.position || meta?.pos || '?';
-    const name = fc?.player?.name     || meta?.name || `Player ${pid}`;
-    const age  = fc?.player?.age      || meta?.age  || null;
     const mv   = mvePlayer(pid, league);
-    const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
-    const nflTeam = fc?.player?.team || meta?.team || '';
+    const obj  = { pid, fc, meta, pos, mv, value: mv?.neutral || 0 };
+    if (SKILL.includes(pos)) playersByPos[pos].push(obj);
+    else other.push(obj);
+  });
 
-    const card = `<div class="player-row" style="cursor:pointer;gap:10px;padding:8px 10px" onclick="openPlayerModal('${pid}')">
+  // Sort each position group by dynasty value descending
+  SKILL.forEach(pos => playersByPos[pos].sort((a, b) => b.value - a.value));
+
+  const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+
+  const renderPlayerCard = ({ pid, fc, meta, pos, mv }) => {
+    const name    = fc?.player?.name || meta?.name || `Player ${pid}`;
+    const age     = fc?.player?.age  || meta?.age  || null;
+    const nflTeam = fc?.player?.team || meta?.team || '';
+    return `<div class="player-row" style="cursor:pointer;gap:10px;padding:8px 10px" onclick="openPlayerModal('${pid}')">
       ${hsImg(pid, 36, pos)}
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -6015,10 +6024,7 @@ function renderRosters() {
         </div>` : `<div style="font-size:.7rem;color:var(--muted);margin-top:2px">No dynasty value</div>`}
       </div>
     </div>`;
-
-    if (SKILL.includes(pos)) playersByPos[pos].push(card);
-    else other.push(card);
-  });
+  };
 
   // Pick capital section
   const teamPicks = Object.values(S.pickOwnership)
@@ -6038,11 +6044,11 @@ function renderRosters() {
   }).join('');
 
   const posSection = pos => {
-    const cards = playersByPos[pos];
-    if (!cards.length) return '';
+    const players = playersByPos[pos];
+    if (!players.length) return '';
     return `<div style="margin-bottom:16px">
-      <div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--border)">${pos} (${cards.length})</div>
-      ${cards.join('')}
+      <div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--border)">${pos} (${players.length})</div>
+      ${players.map(renderPlayerCard).join('')}
     </div>`;
   };
 
@@ -6060,7 +6066,7 @@ function renderRosters() {
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px">
           <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:.78rem;font-weight:700;color:var(--text)">Players</div>
           ${SKILL.map(posSection).join('')}
-          ${other.length ? `<div style="margin-bottom:8px"><div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--border)">Other (${other.length})</div>${other.join('')}</div>` : ''}
+          ${other.length ? `<div style="margin-bottom:8px"><div style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--border)">Other (${other.length})</div>${other.map(renderPlayerCard).join('')}</div>` : ''}
           ${!team?.players?.length ? `<div style="padding:20px;text-align:center;color:var(--muted);font-size:.82rem">No players on roster</div>` : ''}
         </div>
       </div>
