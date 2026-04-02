@@ -979,6 +979,111 @@
       background: rgba(25,35,56,.6);
       border-color: #1e2d42;
     }
+
+    /* ── ROSTER MODAL ─────────────────────────────────────────── */
+    #roster-modal {
+      position:fixed;inset:0;z-index:2000;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0);backdrop-filter:blur(0px);
+      pointer-events:none;
+      transition:background .25s,backdrop-filter .25s;
+    }
+    #roster-modal.open {
+      background:rgba(0,0,0,.8);backdrop-filter:blur(10px);
+      pointer-events:all;
+    }
+    .rm-inner {
+      background:var(--surface1);border:1px solid var(--border);border-radius:20px;
+      width:min(94vw,880px);max-height:90vh;overflow-y:auto;overflow-x:hidden;
+      position:relative;box-shadow:0 32px 80px rgba(0,0,0,.7);
+      transform:translateY(30px) scale(.96);opacity:0;
+      transition:transform .3s cubic-bezier(.34,1.4,.64,1),opacity .22s;
+      scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+    }
+    #roster-modal.open .rm-inner { transform:none;opacity:1; }
+    .rm-close-btn {
+      position:absolute;top:14px;right:14px;z-index:10;
+      width:34px;height:34px;border-radius:50%;border:1px solid var(--border);
+      background:var(--surface2);color:var(--muted);font-size:.85rem;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:background .15s,color .15s;
+    }
+    .rm-close-btn:hover { background:rgba(255,255,255,.1);color:var(--text); }
+    .rm-header {
+      padding:28px 28px 22px;
+      background:linear-gradient(140deg,var(--surface2) 0%,rgba(25,35,55,.95) 100%);
+      border-bottom:1px solid var(--border);position:relative;
+    }
+    .rm-hero { display:flex;align-items:center;gap:18px;margin-bottom:20px; }
+    .rm-avatar-wrap {
+      width:76px;height:76px;flex-shrink:0;border-radius:50%;
+      border:2px solid var(--border);background:var(--surface2);
+      overflow:hidden;display:flex;align-items:center;justify-content:center;
+      box-shadow:0 4px 20px rgba(0,0,0,.5);
+    }
+    .rm-avatar-wrap img { width:100%;height:100%;object-fit:cover; }
+    .rm-title-block { flex:1;min-width:0; }
+    .rm-team-name { font-size:1.45rem;font-weight:800;color:var(--text);line-height:1.1; }
+    .rm-stat-row { display:flex;flex-wrap:wrap;gap:10px; }
+    .rm-chip {
+      background:rgba(255,255,255,.04);border:1px solid var(--border);
+      border-radius:10px;padding:8px 14px;display:flex;flex-direction:column;
+      align-items:center;min-width:82px;
+    }
+    .rm-chip-label { font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em; }
+    .rm-chip-val { font-size:.95rem;font-weight:700;color:var(--text);margin-top:2px; }
+    .rm-body { padding:22px 24px 30px; }
+    .rm-pos-section { margin-bottom:24px; }
+    .rm-pos-header { display:flex;align-items:center;gap:10px;margin-bottom:12px; }
+    .rm-pos-label {
+      font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+      padding:3px 10px;border-radius:5px;flex-shrink:0;
+    }
+    .rm-pos-divider { flex:1;height:1px;background:var(--border); }
+    .rm-player-grid {
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:9px;
+    }
+    .rm-player-card {
+      background:var(--surface2);border:1px solid var(--border);border-radius:12px;
+      padding:10px 12px 10px 15px;display:flex;align-items:center;gap:11px;
+      position:relative;overflow:hidden;transition:border-color .15s,transform .12s;
+    }
+    .rm-player-card:hover { border-color:rgba(255,255,255,.18);transform:translateY(-1px); }
+    .rm-card-accent { position:absolute;left:0;top:0;bottom:0;width:3px; }
+    .rm-hs {
+      width:58px;height:58px;border-radius:9px;object-fit:cover;
+      background:var(--surface1);flex-shrink:0;border:1.5px solid var(--border);
+    }
+    .rm-player-info { flex:1;min-width:0; }
+    .rm-player-name {
+      font-size:.83rem;font-weight:700;color:var(--text);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .rm-player-meta { font-size:.67rem;color:var(--muted);margin-top:2px; }
+    .rm-val-bar-wrap { height:2px;background:rgba(255,255,255,.06);border-radius:2px;margin-top:6px; }
+    .rm-val-bar { height:100%;border-radius:2px; }
+    .rm-player-right { text-align:right;flex-shrink:0; }
+    .rm-player-value { font-size:.88rem;font-weight:700; }
+    .rm-tag {
+      display:inline-block;font-size:.54rem;font-weight:700;letter-spacing:.04em;
+      text-transform:uppercase;border-radius:4px;padding:1px 5px;margin-top:3px;
+    }
+    .rm-picks-grid { display:flex;flex-wrap:wrap;gap:7px;margin-top:10px; }
+    .rm-pick-pill {
+      display:flex;align-items:center;gap:6px;
+      background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.25);
+      border-radius:8px;padding:6px 11px;font-size:.75rem;
+    }
+    .franchise-card-name { cursor:pointer;transition:color .15s; }
+    .franchise-card-name:hover { color:var(--accent); }
+    @media(max-width:600px) {
+      .rm-inner { border-radius:16px 16px 0 0;align-self:flex-end;max-height:92vh; }
+      #roster-modal { align-items:flex-end; }
+      .rm-header { padding:20px 18px 16px; }
+      .rm-body { padding:16px 16px 24px; }
+      .rm-team-name { font-size:1.15rem; }
+      .rm-player-grid { grid-template-columns:1fr; }
+    }
   </style>
 </head>
 <body>
@@ -1062,6 +1167,14 @@
   <div id="tab-trends"   class="tab-content"><div id="trends-content"></div></div>
   <div id="tab-playoffs" class="tab-content"><div id="playoffs-content"></div></div>
 </main>
+
+<!-- ── ROSTER MODAL ───────────────────────────────────────── -->
+<div id="roster-modal" onclick="if(event.target===this)closeRosterModal()">
+  <div class="rm-inner">
+    <button class="rm-close-btn" onclick="closeRosterModal()">✕</button>
+    <div id="roster-modal-content"></div>
+  </div>
+</div>
 
 <script>
 // ── CONSTANTS ─────────────────────────────────────────────────
@@ -4083,7 +4196,7 @@ function renderFranchiseIntel() {
       <div class="franchise-card-header">
         ${av}
         <div class="franchise-card-title">
-          <div class="franchise-card-name">${prof.teamName}</div>
+          <div class="franchise-card-name" onclick="openRosterModal(${prof.rosterId})" title="View full roster">${prof.teamName}</div>
           <div style="margin-top:4px;display:flex;flex-direction:column;align-items:flex-start;gap:3px">
             <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
             <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
@@ -6090,6 +6203,125 @@ function showError(msg) {
   const el=document.getElementById('error-msg');
   el.style.display='block';
   el.innerHTML=`<p style="font-size:1.1rem;margin-bottom:8px">Could not load league data</p><p style="font-size:.85rem;color:var(--muted)">${msg}</p><p style="margin-top:12px;font-size:.8rem;color:var(--muted)">Check that the League ID is correct and your browser can reach api.sleeper.app</p>`;
+}
+
+// ── ROSTER MODAL ──────────────────────────────────────────────
+function openRosterModal(rosterId) {
+  const league = ld();
+  if (!league) return;
+  const prof = mveTeamProfile(rosterId, league);
+  if (!prof) return;
+  const cl = prof.classification;
+  const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
+  const tagStyles = {
+    Sell:       'background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)',
+    Shop:       'background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3)',
+    Buy:        'background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)',
+    Speculative:'background:rgba(163,113,247,.15);color:#a371f7;border:1px solid rgba(163,113,247,.3)',
+    Hold:       'background:rgba(139,148,158,.1);color:#8b949e;border:1px solid rgba(139,148,158,.2)',
+  };
+
+  const maxVal = Math.max(...prof.all.map(p => p.fcValue), 1);
+
+  const av = prof.avatar
+    ? `<img src="${AV_URL(prof.avatar)}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">`
+    : `<span style="font-size:1.8rem">🏠</span>`;
+
+  const chips = [
+    { label:'Total Val',   val: prof.totalValue.toLocaleString() },
+    { label:'Starter Val', val: prof.starterValue.toLocaleString() },
+    { label:'Wtd Age',     val: prof.weightedAge,
+      style: prof.weightedAge<=25 ? 'color:var(--green)' : prof.weightedAge>=29.5 ? 'color:#ef4444' : 'color:var(--yellow)' },
+    { label:'Pick Cap',    val: prof.pickValue.toLocaleString(), style:'color:var(--yellow)' },
+  ].map(c => `<div class="rm-chip">
+    <div class="rm-chip-label">${c.label}</div>
+    <div class="rm-chip-val" style="${c.style||''}">${c.val}</div>
+  </div>`).join('');
+
+  let playerHtml = '';
+  ['QB','RB','WR','TE'].forEach(pos => {
+    const players = prof.byPos[pos];
+    if (!players || !players.length) return;
+    const pc = posColors[pos];
+
+    const cards = players.map(p => {
+      const barW  = Math.round(p.fcValue / maxVal * 100);
+      const valColor = p.fcValue > 6000 ? 'var(--green)' : p.fcValue > 3000 ? 'var(--accent)' : p.fcValue > 1000 ? 'var(--yellow)' : 'var(--muted)';
+      const tag   = p.actionTag && p.actionTag !== 'Hold'
+        ? `<span class="rm-tag" style="${tagStyles[p.actionTag]||tagStyles.Hold}">${p.actionTag}</span>` : '';
+      const meta  = [p.team && p.team !== 'FA' ? p.team : 'FA', p.age ? `Age ${p.age}` : ''].filter(Boolean).join(' · ');
+      return `<div class="rm-player-card">
+        <div class="rm-card-accent" style="background:${pc}"></div>
+        <img class="rm-hs" src="${HS_URL(p.pid)}" onerror="imgFallback(this,'${pos}')" loading="lazy">
+        <div class="rm-player-info">
+          <div class="rm-player-name">${p.name}</div>
+          <div class="rm-player-meta">${meta}</div>
+          <div class="rm-val-bar-wrap"><div class="rm-val-bar" style="width:${barW}%;background:${pc}55"></div></div>
+        </div>
+        <div class="rm-player-right">
+          <div class="rm-player-value" style="color:${valColor}">${p.fcValue > 0 ? p.fcValue.toLocaleString() : '—'}</div>
+          ${tag}
+        </div>
+      </div>`;
+    }).join('');
+
+    playerHtml += `<div class="rm-pos-section">
+      <div class="rm-pos-header">
+        <span class="rm-pos-label" style="background:${pc}22;color:${pc};border:1px solid ${pc}44">${pos}</span>
+        <div class="rm-pos-divider"></div>
+        <span style="font-size:.67rem;color:var(--muted)">${players.length} player${players.length>1?'s':''}</span>
+      </div>
+      <div class="rm-player-grid">${cards}</div>
+    </div>`;
+  });
+
+  let picksHtml = '';
+  if (prof.picks && prof.picks.length) {
+    const pills = prof.picks.map(pk => {
+      const rc  = pickRoundColor(pk.round);
+      const val = getPickValue(pk.season, pk.round, null);
+      const via = pk.originalOwner !== prof.rosterId
+        ? `<span style="color:var(--muted);font-size:.7rem">via ${rName(pk.originalOwner)}</span>` : '';
+      return `<div class="rm-pick-pill">
+        <span style="font-weight:800;color:${rc}">${['','1st','2nd','3rd','4th'][pk.round]||`Rd${pk.round}`}</span>
+        <span style="color:var(--muted)">'${pk.season.toString().slice(2)}</span>
+        ${via}
+        ${val > 0 ? `<span style="color:var(--yellow)">${val.toLocaleString()}</span>` : ''}
+      </div>`;
+    }).join('');
+    picksHtml = `<div class="rm-pos-section">
+      <div class="rm-pos-header">
+        <span class="rm-pos-label" style="background:rgba(210,153,34,.12);color:#d29922;border:1px solid rgba(210,153,34,.3)">Draft Capital</span>
+        <div class="rm-pos-divider"></div>
+        <span style="font-size:.67rem;color:var(--yellow)">${prof.pickValue.toLocaleString()} total</span>
+      </div>
+      <div class="rm-picks-grid">${pills}</div>
+    </div>`;
+  }
+
+  document.getElementById('roster-modal-content').innerHTML = `
+    <div class="rm-header">
+      <div class="rm-hero">
+        <div class="rm-avatar-wrap">${av}</div>
+        <div class="rm-title-block">
+          <div class="rm-team-name">${prof.teamName}</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
+            <span style="font-size:.62rem;color:var(--muted)">${cl.window}</span>
+          </div>
+        </div>
+      </div>
+      <div class="rm-stat-row">${chips}</div>
+    </div>
+    <div class="rm-body">${playerHtml}${picksHtml}</div>`;
+
+  document.getElementById('roster-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeRosterModal() {
+  document.getElementById('roster-modal').classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 // ── INIT ──────────────────────────────────────────────────────
