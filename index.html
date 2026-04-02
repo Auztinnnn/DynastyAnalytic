@@ -1522,29 +1522,54 @@ async function loadChain(startId) {
 
 }
 
+const NFL_LOGO = team => `https://sleepercdn.com/images/team_logos/nfl/${team.toLowerCase()}.jpg`;
+
 // ── BACKGROUND SLEEPER PLAYERS LOADER ────────────────────────
-// Fetches full NFL player list to back-fill team + age missing from FantasyCalc in offseason
+// Fetches full NFL player list to back-fill team + age missing from FantasyCalc in offseason.
+// Also populates K and DEF entries in playersMeta for players actually on rosters.
 async function loadSleeperPlayers() {
   try {
     const data = await fetch(`${BASE}/players/nfl`, { signal: AbortSignal.timeout(25000) })
       .then(r => r.ok ? r.json() : null);
     if (!data) return;
+
+    // Collect all player IDs currently on any roster so we can fill K/DEF meta
+    const rosterPids = new Set();
+    Object.values(S.leagues).forEach(lg => {
+      Object.values(lg.rosterMap || {}).forEach(r => {
+        (r.players || []).forEach(pid => rosterPids.add(String(pid)));
+      });
+    });
+
     const today = new Date();
     Object.entries(data).forEach(([pid, pl]) => {
-      const meta = S.playersMeta[pid];
-      if (!meta) return;
-      if (pl.team) meta.team = pl.team;
-      if (!meta.age && pl.birth_date) {
-        const born = new Date(pl.birth_date);
-        const age = today.getFullYear() - born.getFullYear() -
-          (today < new Date(today.getFullYear(), born.getMonth(), born.getDate()) ? 1 : 0);
-        if (age > 18 && age < 50) {
-          meta.age = age;
-          if (S.fcBySleeperId[pid]) S.fcBySleeperId[pid].player.age = age;
+      const existing = S.playersMeta[pid];
+      if (existing) {
+        // Back-fill team + age for FC players (original behaviour)
+        if (pl.team) existing.team = pl.team;
+        if (!existing.age && pl.birth_date) {
+          const born = new Date(pl.birth_date);
+          const age = today.getFullYear() - born.getFullYear() -
+            (today < new Date(today.getFullYear(), born.getMonth(), born.getDate()) ? 1 : 0);
+          if (age > 18 && age < 50) {
+            existing.age = age;
+            if (S.fcBySleeperId[pid]) S.fcBySleeperId[pid].player.age = age;
+          }
         }
+      } else if (rosterPids.has(pid) && (pl.position === 'K' || pl.position === 'DEF')) {
+        // Add K and DEF players that are on rosters but not in FC data
+        S.playersMeta[pid] = {
+          name: pl.full_name || pl.first_name || pl.last_name || pid,
+          pos:  pl.position,
+          team: pl.team || '',
+          age:  null,
+          value: 0,
+        };
       }
     });
+
     if (currentTab === 'players') renderPlayersTab();
+    if (currentTab === 'rosters') renderRosters();
   } catch(e) { console.warn('Sleeper players fetch failed:', e); }
 }
 
@@ -6007,21 +6032,34 @@ function renderRosters() {
     const name    = fc?.player?.name || meta?.name || `Player ${pid}`;
     const age     = fc?.player?.age  || meta?.age  || null;
     const nflTeam = fc?.player?.team || meta?.team || '';
-    return `<div class="player-row" style="cursor:pointer;gap:10px;padding:8px 10px" onclick="openPlayerModal('${pid}')">
-      ${hsImg(pid, 36, pos)}
+    const isDEF   = pos === 'DEF';
+    const isK     = pos === 'K';
+
+    const avatar = isDEF && nflTeam
+      ? `<img src="${NFL_LOGO(nflTeam)}" width="36" height="36"
+            style="width:36px;height:36px;border-radius:6px;object-fit:contain;background:var(--surface2);border:1px solid var(--border);flex-shrink:0"
+            onerror="this.style.display='none'">`
+      : hsImg(pid, 36, pos);
+
+    const displayName = isDEF
+      ? `${nflTeam || name} D/ST`
+      : name;
+
+    return `<div class="player-row" style="cursor:pointer;gap:10px;padding:8px 10px" onclick="${isDEF||isK ? '' : `openPlayerModal('${pid}')`}">
+      ${avatar}
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:.84rem;font-weight:600;color:var(--text)">${name}</span>
-          <span class="pos-badge pos-${pos}">${pos}</span>
-          ${nflTeam ? `<span class="nfl-team">${nflTeam}</span>` : ''}
-          ${age ? `<span style="font-size:.68rem;color:var(--muted)">Age ${age}</span>` : ''}
+          <span style="font-size:.84rem;font-weight:600;color:var(--text)">${displayName}</span>
+          <span class="pos-badge pos-${isDEF?'DEF':isK?'K':pos}">${isDEF?'DEF':isK?'K':pos}</span>
+          ${!isDEF && nflTeam ? `<span class="nfl-team">${nflTeam}</span>` : ''}
+          ${age && !isDEF ? `<span style="font-size:.68rem;color:var(--muted)">Age ${age}</span>` : ''}
         </div>
         ${mv ? `<div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap">
           <span style="font-size:.7rem;color:var(--muted)">T${mv.tier}</span>
           <span style="font-size:.75rem;font-weight:700;color:var(--accent)">${mv.neutral.toLocaleString()}</span>
           <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}">${mv.actionTag}</span>
           <span style="font-size:.65rem;color:var(--muted)">${mv.roleLabel}</span>
-        </div>` : `<div style="font-size:.7rem;color:var(--muted);margin-top:2px">No dynasty value</div>`}
+        </div>` : (isDEF||isK) ? '' : `<div style="font-size:.7rem;color:var(--muted);margin-top:2px">No dynasty value</div>`}
       </div>
     </div>`;
   };
