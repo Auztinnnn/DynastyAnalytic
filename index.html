@@ -1102,6 +1102,49 @@
     }
     .franchise-card-name { cursor:pointer;transition:color .15s; }
     .franchise-card-name:hover { color:var(--accent); }
+
+    /* ── ROSTERS TAB ──────────────────────────────────────────── */
+    .rosters-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+    .roster-card { background:var(--surface1); border:1px solid var(--border); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
+    .roster-card-hdr {
+      padding:12px 14px 10px;
+      background:linear-gradient(135deg,var(--surface2) 0%,rgba(20,30,50,.95) 100%);
+      border-bottom:1px solid var(--border);
+      display:flex; align-items:center; gap:11px;
+    }
+    .roster-card-av {
+      width:44px; height:44px; border-radius:50%; object-fit:cover;
+      border:1.5px solid var(--border); flex-shrink:0; background:var(--surface2);
+    }
+    .roster-card-name {
+      font-size:.95rem; font-weight:800; color:var(--text);
+      cursor:pointer; transition:color .15s; line-height:1.1;
+    }
+    .roster-card-name:hover { color:var(--accent); }
+    .roster-card-body { padding:10px 12px 12px; flex:1; }
+    .rc-pos-section { margin-bottom:6px; }
+    .rc-pos-hdr {
+      display:flex; align-items:center; gap:6px; margin-bottom:3px;
+    }
+    .rc-pos-pill {
+      font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      padding:1px 7px; border-radius:4px; flex-shrink:0;
+    }
+    .rc-pos-line { flex:1; height:1px; background:var(--border); opacity:.6; }
+    .rc-player-row {
+      display:flex; align-items:center; gap:7px; padding:3px 0;
+      border-bottom:1px solid rgba(255,255,255,.03);
+    }
+    .rc-player-row:last-child { border-bottom:none; }
+    .rc-hs {
+      width:26px; height:26px; border-radius:50%; object-fit:cover;
+      flex-shrink:0; background:var(--surface2); border:1px solid var(--border);
+    }
+    .rc-name { flex:1; font-size:.77rem; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+    .rc-meta { font-size:.65rem; color:var(--muted); flex-shrink:0; }
+    .rc-val  { font-size:.73rem; font-weight:600; text-align:right; flex-shrink:0; min-width:38px; }
+    .rc-picks { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+    @media(max-width:600px) { .rosters-grid { grid-template-columns:1fr; } }
     @media(max-width:600px) {
       .rm-inner { border-radius:16px 16px 0 0;align-self:flex-end;max-height:92vh; }
       #roster-modal { align-items:flex-end; }
@@ -1137,6 +1180,7 @@
     <button onclick="switchTab('league-intel')">League Intel <span class="nav-shortcut">7</span></button>
     <button onclick="switchTab('draft-history')">Draft History <span class="nav-shortcut">8</span></button>
     <button onclick="switchTab('trends')">Market Trends <span class="nav-shortcut">9</span></button>
+    <button onclick="switchTab('rosters')">Rosters</button>
     <button onclick="switchTab('playoffs')">🏆 Playoffs</button>
   <div id="sidebar-season" style="padding:8px 14px;margin-top:4px;border-top:1px solid var(--border);display:none">
     <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Season</div>
@@ -1191,6 +1235,7 @@
   <div id="tab-league-intel" class="tab-content"><div id="league-intel-content"></div></div>
   <div id="tab-draft-history" class="tab-content"><div id="draft-history-content"></div></div>
   <div id="tab-trends"   class="tab-content"><div id="trends-content"></div></div>
+  <div id="tab-rosters"  class="tab-content"><div id="rosters-content"></div></div>
   <div id="tab-playoffs" class="tab-content"><div id="playoffs-content"></div></div>
 </main>
 
@@ -4422,6 +4467,84 @@ function mveTeamActions(cls, byPos, weightedAge, pickValue) {
   return acts;
 }
 
+// ── RENDER: ROSTERS ───────────────────────────────────────────
+function renderRosters() {
+  const league = ld();
+  if (!league) return;
+  const el = document.getElementById('rosters-content');
+  if (!el) return;
+
+  const profiles = Object.values(league.rosterMap)
+    .map(r => mveTeamProfile(r.rosterId, league))
+    .filter(Boolean)
+    .sort((a, b) => b.totalValue - a.totalValue);
+
+  const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
+
+  const cards = profiles.map(prof => {
+    const cl = prof.classification;
+    const av = prof.avatar
+      ? `<img class="roster-card-av" src="${AV_URL(prof.avatar)}" onerror="this.style.display='none'">`
+      : `<span class="roster-card-av" style="display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">🏠</span>`;
+
+    const rec = `${prof.all[0] ? (league.rosterMap[prof.rosterId].wins||0)+'–'+(league.rosterMap[prof.rosterId].losses||0) : ''}`;
+
+    let posHtml = '';
+    ['QB','RB','WR','TE'].forEach(pos => {
+      const players = prof.byPos[pos];
+      if (!players || !players.length) return;
+      const pc = posColors[pos];
+      const rows = players.map(p => {
+        const valColor = p.fcValue > 6000 ? 'var(--green)' : p.fcValue > 3000 ? 'var(--accent)' : p.fcValue > 1000 ? 'var(--yellow)' : 'var(--muted)';
+        const nflTeam = p.team && p.team !== 'FA' ? p.team : '';
+        return `<div class="rc-player-row">
+          <img class="rc-hs" src="${HS_URL(p.pid)}" onerror="imgFallback(this,'${pos}')" loading="lazy">
+          <span class="rc-name">${p.name}</span>
+          <span class="rc-meta">${nflTeam}</span>
+          <span class="rc-val" style="color:${valColor}">${p.fcValue > 0 ? p.fcValue.toLocaleString() : '—'}</span>
+        </div>`;
+      }).join('');
+      posHtml += `<div class="rc-pos-section">
+        <div class="rc-pos-hdr">
+          <span class="rc-pos-pill" style="background:${pc}22;color:${pc};border:1px solid ${pc}44">${pos}</span>
+          <div class="rc-pos-line"></div>
+        </div>
+        ${rows}
+      </div>`;
+    });
+
+    const pickBadges = prof.picks.slice(0, 10).map(pk => {
+      const rc = pickRoundColor(pk.round);
+      return `<span class="pick-cap-badge"><span style="color:${rc};font-weight:700">${pk.round}</span>&thinsp;'${pk.season.toString().slice(2)}</span>`;
+    }).join('');
+    const picksHtml = prof.picks.length ? `<div class="rc-picks">
+      <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Draft Capital · <span style="color:var(--yellow)">${prof.pickValue.toLocaleString()}</span></div>
+      <div class="pick-capital-row">${pickBadges}</div>
+    </div>` : '';
+
+    return `<div class="roster-card">
+      <div class="roster-card-hdr">
+        ${av}
+        <div style="flex:1;min-width:0">
+          <div class="roster-card-name" onclick="openRosterModal(${prof.rosterId})" title="Open detailed roster">${prof.teamName}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap">
+            <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
+            <span style="font-size:.62rem;color:var(--muted)">${rec}</span>
+            <span style="font-size:.62rem;color:var(--muted)">${prof.totalValue.toLocaleString()} val</span>
+          </div>
+        </div>
+      </div>
+      <div class="roster-card-body">${posHtml}${picksHtml}</div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="section-title" style="margin-bottom:14px">
+    Team Rosters
+    <span class="section-note">Sorted by total dynasty value · Click a team name for full detail view</span>
+  </div>
+  <div class="rosters-grid">${cards}</div>`;
+}
+
 // ── RENDER: FRANCHISE INTEL ───────────────────────────────────
 function renderFranchiseIntel() {
   const league = ld();
@@ -5885,6 +6008,7 @@ function switchTab(name) {
   if (name==='league-intel'&&S.currentLeagueId) renderLeagueIntel();
   if (name==='draft-history'&&S.currentLeagueId) renderDraftHistory();
   if (name==='playoffs'&&S.currentLeagueId)     renderPlayoffs();
+  if (name==='rosters'&&S.currentLeagueId)  renderRosters();
   if (name==='trends')  renderTrendsTab();
   setTimeout(addCaptureButtons, 60);
 }
