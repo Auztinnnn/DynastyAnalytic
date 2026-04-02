@@ -6247,9 +6247,9 @@ function openRosterModal(rosterId) {
     const cards = players.map(p => {
       const barW  = Math.round(p.fcValue / maxVal * 100);
       const valColor = p.fcValue > 6000 ? 'var(--green)' : p.fcValue > 3000 ? 'var(--accent)' : p.fcValue > 1000 ? 'var(--yellow)' : 'var(--muted)';
-      const tag   = p.actionTag && p.actionTag !== 'Hold'
+      const tag   = p.actionTag
         ? `<span class="rm-tag" style="${tagStyles[p.actionTag]||tagStyles.Hold}">${p.actionTag}</span>` : '';
-      const meta  = [p.team && p.team !== 'FA' ? p.team : 'FA', p.age ? `Age ${p.age}` : ''].filter(Boolean).join(' · ');
+      const meta  = [p.team && p.team !== 'FA' ? p.team : null, p.age ? `Age ${p.age}` : ''].filter(Boolean).join(' · ');
       return `<div class="rm-player-card">
         <div class="rm-card-accent" style="background:${pc}"></div>
         <img class="rm-hs" src="${HS_URL(p.pid)}" onerror="imgFallback(this,'${pos}')" loading="lazy">
