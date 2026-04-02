@@ -2437,7 +2437,7 @@ function renderPowerRankings() {
   const fmtLabel=`${isSF?'SuperFlex':'1QB'} | ${rec>=1?'Full PPR':rec>=0.5?'Half PPR':'Standard'}`;
   let html='';
   if (!hasFC) html+=`<div class="warn-banner">FantasyCalc values could not be loaded. Rankings use recent scoring only.</div>`;
-  html+=`<div class="section"><div class="section-title">Roster Value by Position ${tip('Stacked bar showing total FantasyCalc dynasty trade value for each team, broken out by position. Taller bar = more total dynasty capital. Does not reflect age or window — use Franchise Intel for that.')} <span class="section-note">${hasFC?'FantasyCalc dynasty values | '+fmtLabel:'Recent form only'}</span></div><div class="chart-wrap"><canvas id="powerChart"></canvas></div></div>`;
+  html+=`<div class="section"><div class="section-title">Roster Value by Position ${tip('Stacked bar showing total FantasyCalc dynasty trade value for each team, broken out by position. Taller bar = more total dynasty capital. Does not reflect age or window — use Franchise Intel for that.')} <span class="section-note">${hasFC?'FantasyCalc dynasty values | '+fmtLabel:'Recent form only'}</span></div><div class="chart-wrap power-chart-wrap"><canvas id="powerChart"></canvas></div></div>`;
   html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe, Productive Middle, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
   rankings.forEach((r,i)=>{
     const cls = mveClassMap[r.rosterId] || { label:'—', color:'#8b949e', bg:'rgba(148,163,184,.1)' };
@@ -2457,7 +2457,34 @@ function renderPowerRankings() {
     S.powerChart=new Chart(ctx,{ type:'bar', data:{ labels:rankings.map(r=>r.teamName), datasets:[{ label:'Power Score', data:rankings.map(r=>r.powerScore), backgroundColor:'#6d28d9' }] }, options:chartOpts('Power Score') });
     return;
   }
-  S.powerChart=new Chart(ctx,{ type:'bar', data:{ labels:rankings.map(r=>r.teamName), datasets:['QB','RB','WR','TE','OTH'].map(pos=>({ label:pos==='OTH'?'Other':pos, data:rankings.map(r=>r.posTotals[pos]||0), backgroundColor:POS_COLORS[pos], stack:'stack' })) }, options:chartOpts('Total Trade Value') });
+  const barTotalsPlugin = {
+    id: 'barTotals',
+    afterDatasetsDraw(chart) {
+      const { ctx, data, scales } = chart;
+      const totals = new Array(data.labels.length).fill(0);
+      data.datasets.forEach(ds => ds.data.forEach((v,i) => { totals[i] += (v||0); }));
+      ctx.save();
+      ctx.font = 'bold 11px -apple-system,BlinkMacSystemFont,sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.82)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      totals.forEach((total, i) => {
+        if (!total) return;
+        const x = scales.x.getPixelForIndex(i);
+        const topY = scales.y.getPixelForValue(total);
+        const barH = scales.y.getPixelForValue(0) - topY;
+        if (barH < 22) return;
+        const label = total.toLocaleString();
+        ctx.save();
+        ctx.translate(x, topY + 8);
+        ctx.rotate(Math.PI / 2);
+        ctx.fillText(label, 0, 0);
+        ctx.restore();
+      });
+      ctx.restore();
+    }
+  };
+  S.powerChart=new Chart(ctx,{ type:'bar', data:{ labels:rankings.map(r=>r.teamName), datasets:['QB','RB','WR','TE','OTH'].map(pos=>({ label:pos==='OTH'?'Other':pos, data:rankings.map(r=>r.posTotals[pos]||0), backgroundColor:POS_COLORS[pos], stack:'stack' })) }, options:chartOpts('Total Trade Value'), plugins:[barTotalsPlugin] });
 }
 
 function chartOpts(yLabel) {
@@ -2470,7 +2497,7 @@ function chartOpts(yLabel) {
     layout:{ padding:0 },
     scales:{
       x:{ stacked:true, ticks:{ color:'#8b949e', font:{ size:window.innerWidth<768?10:11 }, maxRotation:45, minRotation:45 }, grid:{ color:'#21262d' } },
-      y:{ stacked:true, ticks:{ color:'#8b949e', font:{ size:window.innerWidth<768?11:10 }, callback:v=>(v>=1000?(v/1000).toFixed(0)+'k':v.toLocaleString()) }, grid:{ color:'#21262d' }, title:{ display:true, text:yLabel, color:'#8b949e', font:{ size:11 } } }
+      y:{ stacked:true, ticks:{ color:'#8b949e', font:{ size:window.innerWidth<768?11:10 }, stepSize:5000, callback:v=>(v>=1000?(v/1000).toFixed(0)+'k':v.toLocaleString()) }, grid:{ color:'#21262d' }, title:{ display:true, text:yLabel, color:'#8b949e', font:{ size:11 } } }
     }
   };
 }
