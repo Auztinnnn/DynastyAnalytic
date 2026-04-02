@@ -2488,7 +2488,7 @@ function renderPowerRankings() {
       } catch(e) { /* don't break chart if labels fail */ }
     }
   };
-  S.powerChart=new Chart(ctx,{ type:'bar', data:{ labels:rankings.map(r=>r.teamName), datasets:['QB','RB','WR','TE','OTH'].map(pos=>({ label:pos==='OTH'?'Other':pos, data:rankings.map(r=>r.posTotals[pos]||0), backgroundColor:POS_COLORS[pos], stack:'stack' })) }, options:chartOpts('Total Trade Value'), plugins:[barTotalsPlugin] });
+  S.powerChart=new Chart(ctx,{ type:'bar', data:{ labels:rankings.map(r=>r.teamName), datasets:['QB','RB','WR','TE'].map(pos=>({ label:pos, data:rankings.map(r=>r.posTotals[pos]||0), backgroundColor:POS_COLORS[pos], stack:'stack' })) }, options:chartOpts('Total Trade Value'), plugins:[barTotalsPlugin] });
 }
 
 function chartOpts(yLabel) {
