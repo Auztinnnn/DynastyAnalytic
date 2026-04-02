@@ -2977,7 +2977,7 @@ async function loadStatsView() {
       const meta = S.playersMeta[String(pid)];
       if (!meta || !['QB','RB','WR','TE'].includes(meta.pos)) return;
       if (!agg[pid]) { agg[pid] = { gp:0 }; FIELDS.forEach(f => agg[pid][f] = 0); }
-      const active = (st.off_snp > 0) || ((st[ptKey]||0) > 0) || (st.pass_att > 0);
+      const active = (st.off_snp > 0) || ((st[ptKey]||0) > 0) || (st.pass_att > 0) || (st.rush_att > 0) || (st.rec_tgt > 0);
       if (active) agg[pid].gp++;
       FIELDS.forEach(f => { if (st[f]) agg[pid][f] += st[f]; });
     });
@@ -3055,72 +3055,99 @@ function renderStatsTable() {
   const grid = document.getElementById('players-grid');
   if (!grid || !statsRowsCache) return;
 
-  const pos  = statsPosFilter;
-  let rows   = statsRowsCache.rows;
+  // Save scroll position before re-render
+  const prevScroll = grid.querySelector('.stats-tbl-wrap')?.scrollLeft || 0;
+
+  const pos = statsPosFilter;
+  let rows  = statsRowsCache.rows;
   if (pos !== 'ALL') rows = rows.filter(r => r.pos === pos);
 
-  // Column definitions per position group
-  const pct  = v => v != null ? (v*100).toFixed(1)+'%' : '—';
-  const d1   = v => v != null && v > 0 ? v.toFixed(1) : '—';
-  const d2   = v => v != null && v > 0 ? v.toFixed(2) : '—';
-  const tot  = v => v != null && v > 0 ? Math.round(v).toString() : '—';
-  const val  = v => v > 0 ? v.toLocaleString() : '—';
+  const pct = v => v != null && v > 0 ? (v*100).toFixed(1)+'%' : '—';
+  const d1  = v => v != null && v > 0 ? v.toFixed(1) : '—';
+  const d2  = v => v != null && v > 0 ? v.toFixed(2) : '—';
+  const int = v => v != null && v > 0 ? Math.round(v).toString() : '—';
+  const dyn = v => v > 0 ? v.toLocaleString() : '—';
 
   const COLS = {
     ALL: [
-      { key:'fpts_pg',   label:'Fpts/G',    tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
-      { key:'gp',        label:'GP',         tip:'Games played this season',                         fmt:tot     },
-      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
-      { key:'fpts',      label:'Fpts',       tip:'Total fantasy points this season',                 fmt:d1,  hi:1 },
-      { key:'fcVal',     label:'FC Val',     tip:'FantasyCalc dynasty trade value',                  fmt:val, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',      tip:'Fantasy points per game',                                    fmt:d1,  hi:1 },
+      { key:'gp',        label:'GP',           tip:'Games played this season',                                   fmt:int      },
+      { key:'snap_pct',  label:'Snap%',        tip:'Share of team offensive snaps',                              fmt:pct, hi:1 },
+      { key:'fpts',      label:'Season Fpts',  tip:'Total fantasy points this season',                           fmt:d1,  hi:1 },
+      { key:'fcVal',     label:'FC Val',       tip:'FantasyCalc dynasty trade value',                            fmt:dyn, hi:1 },
     ],
     QB: [
-      { key:'gp',        label:'GP',         tip:'Games played',                                     fmt:tot     },
-      { key:'cmp_pct',   label:'Cmp%',       tip:'Completion percentage',                            fmt:pct, hi:1 },
-      { key:'pass_yd_pg',label:'Pass Yds/G', tip:'Passing yards per game',                           fmt:d1,  hi:1 },
-      { key:'ypa',       label:'YPA',        tip:'Yards per pass attempt',                           fmt:d1,  hi:1 },
-      { key:'pass_td',   label:'Pass TD',    tip:'Total passing touchdowns',                         fmt:tot, hi:1 },
-      { key:'pass_int',  label:'INT',        tip:'Total interceptions thrown',                       fmt:tot, hi:-1 },
-      { key:'rush_yd_pg',label:'Rush Yds/G', tip:'Rushing yards per game',                           fmt:d1,  hi:1 },
-      { key:'rush_td',   label:'Rush TD',    tip:'Rushing touchdowns',                               fmt:tot, hi:1 },
-      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
-      { key:'fpts_pg',   label:'Fpts/G',     tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+      { key:'gp',        label:'GP',           tip:'Games played',                                               fmt:int      },
+      { key:'cmp_pct',   label:'Cmp%',         tip:'Completion percentage',                                      fmt:pct, hi:1 },
+      { key:'pass_yd_pg',label:'Pass Yds/G',   tip:'Passing yards per game',                                     fmt:d1,  hi:1 },
+      { key:'ypa',       label:'YPA',          tip:'Yards per pass attempt',                                     fmt:d1,  hi:1 },
+      { key:'pass_td',   label:'Pass TD',      tip:'Total passing touchdowns (season)',                          fmt:int, hi:1 },
+      { key:'pass_int',  label:'INT',          tip:'Total interceptions thrown (season)',                        fmt:int, hi:-1},
+      { key:'rush_yd_pg',label:'Rush Yds/G',   tip:'Rushing yards per game',                                     fmt:d1,  hi:1 },
+      { key:'rush_td',   label:'Rush TD',      tip:'Rushing touchdowns (season)',                                fmt:int, hi:1 },
+      { key:'snap_pct',  label:'Snap%',        tip:'Share of team offensive snaps',                              fmt:pct, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',       tip:'Fantasy points per game',                                    fmt:d1,  hi:1 },
     ],
     RB: [
-      { key:'gp',        label:'GP',         tip:'Games played',                                     fmt:tot     },
-      { key:'att_pg',    label:'Att/G',      tip:'Rush attempts per game',                           fmt:d1,  hi:1 },
-      { key:'rush_yd_pg',label:'Rush Yds/G', tip:'Rushing yards per game',                           fmt:d1,  hi:1 },
-      { key:'ypc',       label:'YPC',        tip:'Yards per carry',                                  fmt:d1,  hi:1 },
-      { key:'rush_td',   label:'Rush TD',    tip:'Rushing touchdowns',                               fmt:tot, hi:1 },
-      { key:'rush_fd',   label:'1st Dns',    tip:'Rushing first downs',                              fmt:tot, hi:1 },
-      { key:'tgt_pg',    label:'Tgt/G',      tip:'Targets per game',                                 fmt:d1,  hi:1 },
-      { key:'rec_pg',    label:'Rec/G',      tip:'Receptions per game',                              fmt:d1,  hi:1 },
-      { key:'rec_yd_pg', label:'Rec Yds/G',  tip:'Receiving yards per game',                         fmt:d1,  hi:1 },
-      { key:'opp_share', label:'Opp%',       tip:'Opportunity share: (rush att + tgt) ÷ team total', fmt:pct, hi:1 },
-      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
-      { key:'fpts_pg',   label:'Fpts/G',     tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+      { key:'gp',        label:'GP',           tip:'Games played',                                               fmt:int      },
+      { key:'att_pg',    label:'Att/G',        tip:'Rush attempts per game',                                     fmt:d1,  hi:1 },
+      { key:'rush_yd_pg',label:'Rush Yds/G',   tip:'Rushing yards per game',                                     fmt:d1,  hi:1 },
+      { key:'ypc',       label:'YPC',          tip:'Yards per carry',                                            fmt:d1,  hi:1 },
+      { key:'rush_td',   label:'Rush TD',      tip:'Rushing touchdowns (season)',                                fmt:int, hi:1 },
+      { key:'rush_fd',   label:'1st Dns',      tip:'Rushing first downs (season)',                               fmt:int, hi:1 },
+      { key:'tgt_pg',    label:'Tgt/G',        tip:'Targets per game',                                           fmt:d1,  hi:1 },
+      { key:'rec_pg',    label:'Rec/G',        tip:'Receptions per game',                                        fmt:d1,  hi:1 },
+      { key:'rec_yd_pg', label:'Rec Yds/G',    tip:'Receiving yards per game',                                   fmt:d1,  hi:1 },
+      { key:'opp_share', label:'Opp%',         tip:'Opportunity share — (rush attempts + targets) ÷ team total', fmt:pct, hi:1 },
+      { key:'snap_pct',  label:'Snap%',        tip:'Share of team offensive snaps',                              fmt:pct, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',       tip:'Fantasy points per game',                                    fmt:d1,  hi:1 },
     ],
     WR: [
-      { key:'gp',        label:'GP',         tip:'Games played',                                     fmt:tot     },
-      { key:'tgt_pg',    label:'Tgt/G',      tip:'Targets per game',                                 fmt:d1,  hi:1 },
-      { key:'rec_pg',    label:'Rec/G',      tip:'Receptions per game',                              fmt:d1,  hi:1 },
-      { key:'catch_pct', label:'Catch%',     tip:'Catch rate (receptions ÷ targets)',                fmt:pct, hi:1 },
-      { key:'rec_yd_pg', label:'Yds/G',      tip:'Receiving yards per game',                         fmt:d1,  hi:1 },
-      { key:'ypr',       label:'YPR',        tip:'Yards per reception',                              fmt:d1,  hi:1 },
-      { key:'ypt',       label:'YPT',        tip:'Yards per target',                                 fmt:d1,  hi:1 },
-      { key:'rec_td',    label:'TD',         tip:'Receiving touchdowns',                             fmt:tot, hi:1 },
-      { key:'air_yd_pg', label:'AirYds/G',   tip:'Air yards per game (depth of target)',             fmt:d1,  hi:1 },
-      { key:'racr',      label:'RACR',       tip:'Receiver Air Conversion Ratio: rec yds ÷ air yds. >1.0 = YAC-heavy, <0.7 = limited YAC', fmt:d2, hi:1 },
-      { key:'tgt_share', label:'Tgt%',       tip:'Share of team targets',                            fmt:pct, hi:1 },
-      { key:'air_share', label:'AirYd%',     tip:'Share of team air yards',                          fmt:pct, hi:1 },
-      { key:'snap_pct',  label:'Snap%',      tip:'Share of team offensive snaps',                    fmt:pct, hi:1 },
-      { key:'fpts_pg',   label:'Fpts/G',     tip:'Fantasy points per game',                          fmt:d1,  hi:1 },
+      { key:'gp',        label:'GP',           tip:'Games played',                                               fmt:int      },
+      { key:'tgt_pg',    label:'Tgt/G',        tip:'Targets per game',                                           fmt:d1,  hi:1 },
+      { key:'rec_pg',    label:'Rec/G',        tip:'Receptions per game',                                        fmt:d1,  hi:1 },
+      { key:'catch_pct', label:'Catch%',       tip:'Catch rate — receptions ÷ targets',                         fmt:pct, hi:1 },
+      { key:'rec_yd_pg', label:'Rec Yds/G',    tip:'Receiving yards per game',                                   fmt:d1,  hi:1 },
+      { key:'ypr',       label:'YPR',          tip:'Yards per reception',                                        fmt:d1,  hi:1 },
+      { key:'ypt',       label:'YPT',          tip:'Yards per target',                                           fmt:d1,  hi:1 },
+      { key:'rec_td',    label:'Rec TD',       tip:'Receiving touchdowns (season)',                              fmt:int, hi:1 },
+      { key:'air_yd_pg', label:'AirYds/G',     tip:'Air yards per game (depth of target)',                       fmt:d1,  hi:1 },
+      { key:'racr',      label:'RACR',         tip:'Receiver Air Conversion Ratio: rec yds ÷ air yds. >1.0 = YAC-heavy, <0.7 = limited YAC', fmt:d2, hi:1 },
+      { key:'tgt_share', label:'Tgt%',         tip:'Share of team targets',                                      fmt:pct, hi:1 },
+      { key:'air_share', label:'AirYd%',       tip:'Share of team air yards',                                    fmt:pct, hi:1 },
+      { key:'snap_pct',  label:'Snap%',        tip:'Share of team offensive snaps',                              fmt:pct, hi:1 },
+      { key:'fpts_pg',   label:'Fpts/G',       tip:'Fantasy points per game',                                    fmt:d1,  hi:1 },
     ],
   };
   COLS.TE = COLS.WR;
   const cols = COLS[pos] || COLS.ALL;
 
-  // Sort
+  // ── Rank-based coloring (computed pre-sort, keyed by pid) ──
+  // rank 0 = best player in that column, 1 = worst
+  const colorMap = {}; // colKey → Map<pid, rank 0-1>
+  cols.forEach(c => {
+    if (!c.hi) return;
+    const items = rows
+      .filter(r => r[c.key] != null && r[c.key] > 0)
+      .map(r => ({ pid: r.pid, v: r[c.key] }));
+    // sort best-first (low INTs = best for hi:-1, high value = best for hi:1)
+    items.sort((a, b) => c.hi === -1 ? a.v - b.v : b.v - a.v);
+    const n = items.length;
+    const m = new Map();
+    items.forEach((x, i) => m.set(x.pid, n > 1 ? i / (n - 1) : 0));
+    colorMap[c.key] = m;
+  });
+
+  function cellCls(c, pid) {
+    if (!c.hi) return '';
+    const rank = colorMap[c.key]?.get(pid);
+    if (rank == null) return 'sv-na';
+    if (rank <= 0.25) return c.hi === -1 ? 'sv-bad' : 'sv-hi';
+    if (rank >= 0.75) return c.hi === -1 ? 'sv-hi'  : 'sv-lo';
+    return '';
+  }
+
+  // ── Sort rows for display ──
   const { key: sk, dir: sd } = statsSort;
   rows = [...rows].sort((a, b) => {
     const av = a[sk] ?? (sd > 0 ? Infinity : -Infinity);
@@ -3128,42 +3155,25 @@ function renderStatsTable() {
     return sd > 0 ? av - bv : bv - av;
   });
 
-  // Percentile thresholds per column for coloring
-  const pct75 = {}, pct25 = {};
-  cols.forEach(c => {
-    const vals = rows.map(r => r[c.key]).filter(v => v != null && v > 0).sort((a,b) => a-b);
-    pct75[c.key] = vals[Math.floor(vals.length * 0.75)] ?? 0;
-    pct25[c.key] = vals[Math.floor(vals.length * 0.25)] ?? 0;
-  });
-
-  function cellCls(c, v) {
-    if (v == null || v === 0) return 'sv-na';
-    if (c.hi === -1) return v <= pct25[c.key] ? 'sv-hi' : v >= pct75[c.key] ? 'sv-bad' : 'sv-mid';
-    if (c.hi ===  1) return v >= pct75[c.key] ? 'sv-hi' : v <= pct25[c.key] ? 'sv-lo'  : 'sv-mid';
-    return 'sv-mid';
-  }
-
-  const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
   const isSortAsc = sd > 0;
 
-  let thead = `<tr>
+  const thead = `<tr>
     <th class="col-player" onclick="sortStats('name')" style="text-align:left">Player</th>
     <th onclick="sortStats('owner')" style="text-align:left;min-width:90px">Owner</th>
-    ${pos==='ALL'?'<th>Pos</th>':''}
-    ${cols.map(c=>{
-      const on = sk===c.key;
-      return `<th class="${on?(isSortAsc?'srt-on srt-asc':'srt-on'):''}" onclick="sortStats('${c.key}')" title="${c.tip||''}" style="text-align:right">${c.label}</th>`;
+    ${pos==='ALL'?'<th style="text-align:center">Pos</th>':''}
+    ${cols.map(c => {
+      const on = sk === c.key;
+      return `<th class="${on ? (isSortAsc ? 'srt-on srt-asc' : 'srt-on') : ''}" onclick="sortStats('${c.key}')" title="${c.tip||''}" style="text-align:right">${c.label}</th>`;
     }).join('')}
   </tr>`;
 
-  let tbody = rows.map(r => {
-    const pc = posColors[r.pos] || 'var(--muted)';
-    const ageTxt = r.age ? `<span style="font-size:.62rem;color:var(--muted)"> · ${r.age}yr</span>` : '';
+  const tbody = rows.map(r => {
+    const ageTxt = r.age ? ` · ${r.age}yr` : '';
     const playerCell = `<td class="col-player-cell">
       <div class="pcell-inner">
         <img class="pcell-hs" src="${HS_URL(r.pid)}" onerror="imgFallback(this,'${r.pos}')" loading="lazy">
         <div>
-          <div style="font-weight:600;font-size:.8rem;line-height:1.2">${r.name}${ageTxt}</div>
+          <div style="font-weight:600;font-size:.8rem;line-height:1.2">${r.name}<span style="font-size:.62rem;color:var(--muted)">${ageTxt}</span></div>
           <div style="display:flex;gap:4px;margin-top:2px;align-items:center">
             <span class="pos-badge pos-${r.pos}" style="font-size:.58rem;padding:1px 4px">${r.pos}</span>
             <span style="font-size:.65rem;color:var(--muted)">${r.team||'—'}</span>
@@ -3171,20 +3181,25 @@ function renderStatsTable() {
         </div>
       </div>
     </td>`;
-    const ownerCell = `<td style="font-size:.7rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis">${r.owner}</td>`;
-    const posCell   = pos==='ALL' ? `<td style="text-align:center"><span class="pos-badge pos-${r.pos}" style="font-size:.58rem;padding:1px 4px">${r.pos}</span></td>` : '';
-    const dataCells = cols.map(c => `<td class="${cellCls(c,r[c.key])}" style="text-align:right">${c.fmt(r[c.key])}</td>`).join('');
+    const ownerCell = `<td style="font-size:.7rem;color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.owner}</td>`;
+    const posCell   = pos === 'ALL' ? `<td style="text-align:center"><span class="pos-badge pos-${r.pos}" style="font-size:.58rem;padding:1px 4px">${r.pos}</span></td>` : '';
+    const dataCells = cols.map(c => `<td class="${cellCls(c, r.pid)}" style="text-align:right">${c.fmt(r[c.key])}</td>`).join('');
     return `<tr>${playerCell}${ownerCell}${posCell}${dataCells}</tr>`;
   }).join('');
 
   const note = `<div style="font-size:.71rem;color:var(--muted);margin:0 0 8px">
-    ${rows.length} rostered players with game action · Season totals &amp; per-game rates ·
-    <span style="color:#3fb950">Green</span> = top 25% · <span style="color:var(--muted)">Faded</span> = bottom 25% ·
-    Click any column to sort
+    ${rows.length} rostered players with game action · /G = per game · Season totals labeled (season) ·
+    <span style="color:#3fb950">Green</span> = top 25% · <span style="color:var(--muted)">Faded</span> = bottom 25% · Click any column to sort
   </div>`;
 
   grid.className = '';
   grid.innerHTML = note + `<div class="stats-tbl-wrap"><table class="stats-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
+
+  // Restore scroll position after re-render
+  if (prevScroll > 0) {
+    const wrap = grid.querySelector('.stats-tbl-wrap');
+    if (wrap) wrap.scrollLeft = prevScroll;
+  }
 }
 
 function sortStats(key) {
