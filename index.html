@@ -52,6 +52,38 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* SUB-TABS */
+    .sub-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .sub-tab {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: .8rem;
+      font-weight: 500;
+      padding: 9px 18px;
+      cursor: pointer;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+      white-space: nowrap;
+      touch-action: manipulation;
+      border-radius: 0;
+    }
+    .sub-tab:hover { color: var(--text); }
+    .sub-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .sub-panel { display: none; }
+    .sub-panel.active { display: block; }
+    @media (max-width: 600px) {
+      .sub-tabs { gap: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+      .sub-tab  { padding: 9px 14px; font-size: .75rem; }
+    }
+
     /* CARDS */
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; margin-bottom: 24px; }
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
@@ -1171,17 +1203,11 @@
     <button id="nav-close-btn" onclick="mobileNavClose()" aria-label="Close navigation">✕</button>
   </div>
   <nav id="main-nav">
-    <button class="active" onclick="switchTab('overview')">Overview <span class="nav-shortcut">1</span></button>
-    <button onclick="switchTab('power')">Power Rankings <span class="nav-shortcut">2</span></button>
-    <button onclick="switchTab('players')">Players <span class="nav-shortcut">3</span></button>
-    <button onclick="switchTab('trade')">Trade Calculator <span class="nav-shortcut">4</span></button>
-    <button onclick="switchTab('wrapped')">Fantasy Wrapped <span class="nav-shortcut">5</span></button>
-    <button onclick="switchTab('franchise')">Franchise Intel <span class="nav-shortcut">6</span></button>
-    <button onclick="switchTab('league-intel')">League Intel <span class="nav-shortcut">7</span></button>
-    <button onclick="switchTab('draft-history')">Draft History <span class="nav-shortcut">8</span></button>
-    <button onclick="switchTab('trends')">Market Trends <span class="nav-shortcut">9</span></button>
-    <button onclick="switchTab('rosters')">Rosters</button>
-    <button onclick="switchTab('playoffs')">🏆 Playoffs</button>
+    <button class="active" data-tab="league" onclick="switchTab('league')">🏠 League <span class="nav-shortcut">1</span></button>
+    <button data-tab="teams" onclick="switchTab('teams')">🏈 Teams <span class="nav-shortcut">2</span></button>
+    <button data-tab="players" onclick="switchTab('players')">👥 Players <span class="nav-shortcut">3</span></button>
+    <button data-tab="trade" onclick="switchTab('trade')">🔄 Trade <span class="nav-shortcut">4</span></button>
+    <button data-tab="history" onclick="switchTab('history')">📜 History <span class="nav-shortcut">5</span></button>
   <div id="sidebar-season" style="padding:8px 14px;margin-top:4px;border-top:1px solid var(--border);display:none">
     <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Season</div>
     <div id="sidebar-season-btns" style="display:flex;flex-wrap:wrap;gap:4px"></div>
@@ -1226,17 +1252,55 @@
   <div id="loading"><div class="spinner"></div><p>Loading league data...</p></div>
   <div id="error-msg"></div>
 
-  <div id="tab-overview"  class="tab-content"><div id="overview-content"></div></div>
-  <div id="tab-power"     class="tab-content"><div id="power-content"></div></div>
-  <div id="tab-players"   class="tab-content"><div id="players-content"></div></div>
-  <div id="tab-trade"     class="tab-content"><div id="trade-content"></div></div>
-  <div id="tab-wrapped"      class="tab-content"><div id="wrapped-content"></div></div>
-  <div id="tab-franchise"    class="tab-content"><div id="franchise-content"></div></div>
-  <div id="tab-league-intel" class="tab-content"><div id="league-intel-content"></div></div>
-  <div id="tab-draft-history" class="tab-content"><div id="draft-history-content"></div></div>
-  <div id="tab-trends"   class="tab-content"><div id="trends-content"></div></div>
-  <div id="tab-rosters"  class="tab-content"><div id="rosters-content"></div></div>
-  <div id="tab-playoffs" class="tab-content"><div id="playoffs-content"></div></div>
+  <!-- LEAGUE: Overview + League Intel -->
+  <div id="tab-league" class="tab-content active">
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="overview" onclick="switchSubTab('league','overview')">Overview</button>
+      <button class="sub-tab" data-sub="intel" onclick="switchSubTab('league','intel')">League Intel</button>
+    </div>
+    <div id="sub-league-overview" class="sub-panel active">
+      <div id="season-switcher" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:.78rem;color:var(--muted)">Season:</span></div>
+      <div id="overview-content"></div>
+    </div>
+    <div id="sub-league-intel" class="sub-panel"><div id="league-intel-content"></div></div>
+  </div>
+
+  <!-- TEAMS: Power Rankings + Franchise + Rosters -->
+  <div id="tab-teams" class="tab-content">
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="power" onclick="switchSubTab('teams','power')">Power Rankings</button>
+      <button class="sub-tab" data-sub="franchise" onclick="switchSubTab('teams','franchise')">Franchise</button>
+      <button class="sub-tab" data-sub="rosters" onclick="switchSubTab('teams','rosters')">Rosters</button>
+    </div>
+    <div id="sub-teams-power" class="sub-panel active"><div id="power-content"></div></div>
+    <div id="sub-teams-franchise" class="sub-panel"><div id="franchise-content"></div></div>
+    <div id="sub-teams-rosters" class="sub-panel"><div id="rosters-content"></div></div>
+  </div>
+
+  <!-- PLAYERS: Weekly Stats + Market Trends -->
+  <div id="tab-players" class="tab-content">
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="weekly" onclick="switchSubTab('players','weekly')">Weekly Stats</button>
+      <button class="sub-tab" data-sub="trends" onclick="switchSubTab('players','trends')">Market Trends</button>
+    </div>
+    <div id="sub-players-weekly" class="sub-panel active"><div id="players-content"></div></div>
+    <div id="sub-players-trends" class="sub-panel"><div id="trends-content"></div></div>
+  </div>
+
+  <!-- TRADE -->
+  <div id="tab-trade" class="tab-content"><div id="trade-content"></div></div>
+
+  <!-- HISTORY: Wrapped + Draft + Playoffs -->
+  <div id="tab-history" class="tab-content">
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="wrapped" onclick="switchSubTab('history','wrapped')">Season Wrapped</button>
+      <button class="sub-tab" data-sub="draft" onclick="switchSubTab('history','draft')">Draft History</button>
+      <button class="sub-tab" data-sub="playoffs" onclick="switchSubTab('history','playoffs')">🏆 Playoffs</button>
+    </div>
+    <div id="sub-history-wrapped" class="sub-panel active"><div id="wrapped-content"></div></div>
+    <div id="sub-history-draft" class="sub-panel"><div id="draft-history-content"></div></div>
+    <div id="sub-history-playoffs" class="sub-panel"><div id="playoffs-content"></div></div>
+  </div>
 </main>
 
 <!-- ── ROSTER / PLAYER MODAL ─────────────────────────────── -->
@@ -6219,14 +6283,48 @@ async function openPlayerModal(pid) {
     </div>`;
 }
 
+// ── SUB-TAB STATE ─────────────────────────────────────────────
+const subTabState = {
+  league:  'overview',
+  teams:   'power',
+  players: 'weekly',
+  history: 'wrapped',
+};
+
+function switchSubTab(mainTab, subId) {
+  subTabState[mainTab] = subId;
+  localStorage.setItem('fo_subtab_'+mainTab, subId);
+  const tabEl = document.getElementById('tab-'+mainTab);
+  if (!tabEl) return;
+  tabEl.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('sub-'+mainTab+'-'+subId);
+  if (panel) panel.classList.add('active');
+  tabEl.querySelectorAll('.sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === subId));
+  renderForSubTab(mainTab, subId);
+}
+
+function renderForSubTab(mainTab, subId) {
+  if (!S.currentLeagueId) return;
+  const k = mainTab + '/' + subId;
+  if      (k==='league/overview')   renderOverview();
+  else if (k==='league/intel')      renderLeagueIntel();
+  else if (k==='teams/power')       renderPowerRankings();
+  else if (k==='teams/franchise')   renderFranchiseIntel();
+  else if (k==='teams/rosters')     renderRosters();
+  else if (k==='players/weekly')    renderPlayersTab();
+  else if (k==='players/trends')    renderTrendsTab();
+  else if (k==='history/wrapped')   renderFantasyWrapped();
+  else if (k==='history/draft')     renderDraftHistory();
+  else if (k==='history/playoffs')  renderPlayoffs();
+  setTimeout(addCaptureButtons, 60);
+}
+
 function renderAll() {
   statsRowsCache = null; // invalidate on season change
   renderOverview();
   renderPowerRankings();
   renderFantasyWrapped();
-  if (currentTab==='players') renderPlayersTab();
-  if (currentTab==='trade')   renderTradeCalculator();
-  if (currentTab==='rosters') renderRosters();
+  renderForSubTab(currentTab, subTabState[currentTab] || '');
   updateSidebarSeason();
   // Defer slightly so all innerHTML has settled before querying titles
   setTimeout(addCaptureButtons, 50);
@@ -6255,21 +6353,15 @@ function toggleDataSources() {
 function switchTab(name) {
   mobileNavClose();
   localStorage.setItem('fo_tab', name);
-  document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
-  document.querySelectorAll('#main-nav button').forEach(e=>e.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  const labels={ overview:'Overview', power:'Power Rankings', players:'Players', trade:'Trade Calculator', wrapped:'Fantasy Wrapped', franchise:'Franchise Intel', 'league-intel':'League Intel', 'draft-history':'Draft History', trends:'Market Trends', rosters:'Rosters', playoffs:'🏆 Playoffs' };
-  document.querySelectorAll('#main-nav button').forEach(b=>{ if(b.textContent.trim()===labels[name]) b.classList.add('active'); });
-  currentTab=name;
-  if (name==='trade'&&S.currentLeagueId)        renderTradeCalculator();
-  if (name==='players'&&S.currentLeagueId)      renderPlayersTab();
-  if (name==='franchise'&&S.currentLeagueId)    renderFranchiseIntel();
-  if (name==='league-intel'&&S.currentLeagueId) renderLeagueIntel();
-  if (name==='draft-history'&&S.currentLeagueId) renderDraftHistory();
-  if (name==='playoffs'&&S.currentLeagueId)     renderPlayoffs();
-  if (name==='rosters'&&S.currentLeagueId)  renderRosters();
-  if (name==='trends')  renderTrendsTab();
-  if (name==='rosters'&&S.currentLeagueId) renderRosters();
+  document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+  document.querySelectorAll('#main-nav button').forEach(e => e.classList.remove('active'));
+  const tabEl = document.getElementById('tab-'+name);
+  if (!tabEl) return;
+  tabEl.classList.add('active');
+  document.querySelectorAll('#main-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  currentTab = name;
+  if (name === 'trade' && S.currentLeagueId) renderTradeCalculator();
+  else renderForSubTab(name, subTabState[name] || '');
   setTimeout(addCaptureButtons, 60);
 }
 
@@ -6291,9 +6383,10 @@ function updateSidebarSeason() {
     b.onclick = () => {
       S.currentLeagueId = sid;
       renderAll();
-      if (currentTab === 'franchise')    renderFranchiseIntel();
-      if (currentTab === 'league-intel') renderLeagueIntel();
-      if (currentTab === 'draft-history') renderDraftHistory();
+      const sub = subTabState[currentTab];
+      if (currentTab === 'teams'   && sub === 'franchise') renderFranchiseIntel();
+      if (currentTab === 'league'  && sub === 'intel')     renderLeagueIntel();
+      if (currentTab === 'history' && sub === 'draft')     renderDraftHistory();
       updateSidebarSeason();
     };
     btns.appendChild(b);
@@ -6875,7 +6968,7 @@ function setTrendsPos(p) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeRosterModal(); mobileNavClose(); return; }
   if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-  const map = {'1':'overview','2':'power','3':'players','4':'trade','5':'wrapped','6':'franchise','7':'league-intel','8':'draft-history','9':'trends','0':'playoffs'};
+  const map = {'1':'league','2':'teams','3':'players','4':'trade','5':'history'};
   if (map[e.key]) switchTab(map[e.key]);
 });
 
@@ -7013,12 +7106,29 @@ function closeRosterModal() {
 }
 
 // ── INIT ──────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('fo_tab');
-  if (saved) currentTab = saved;
-  document.getElementById('tab-overview').classList.add('active');
-  document.getElementById('loading').style.display='block';
-  document.querySelectorAll('.tab-content').forEach(e=>{e.style.display='none';});
+  const validTabs = ['league','teams','players','trade','history'];
+  if (saved && validTabs.includes(saved)) currentTab = saved;
+  // Restore saved sub-tab selections
+  Object.keys(subTabState).forEach(main => {
+    const s = localStorage.getItem('fo_subtab_'+main);
+    if (s) {
+      subTabState[main] = s;
+      // Activate saved sub-panel and button
+      const panel = document.getElementById('sub-'+main+'-'+s);
+      const tabEl  = document.getElementById('tab-'+main);
+      if (panel && tabEl) {
+        tabEl.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
+        panel.classList.add('active');
+        tabEl.querySelectorAll('.sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === s));
+      }
+    }
+  });
+  document.getElementById('tab-'+currentTab).classList.add('active');
+  document.querySelectorAll('#main-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
+  document.getElementById('loading').style.display = 'block';
+  document.querySelectorAll('.tab-content').forEach(e => { e.style.display = 'none'; });
   initLoad();
 });
 </script>
