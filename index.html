@@ -6500,6 +6500,11 @@ function poComputeStats(pd) {
   const maxR  = pd.maxRound;
   const r1ids = new Set();
   pd.bracket.filter(b=>b.r===1).forEach(b=>{ if(b.t1) r1ids.add(b.t1); if(b.t2) r1ids.add(b.t2); });
+  // Use p (placement) field first — maxRound can be inflated by consolation/toilet-bowl
+  // brackets that run longer than the main bracket, causing r===maxR to miss the real
+  // championship game. Mirror the same lookup used in poSeasonResults.
+  const champMatch = pd.bracket.find(b => b.p === 1 && b.w) || pd.bracket.find(b => b.r === maxR && b.m === 1 && b.w);
+  const thirdMatch = pd.bracket.find(b => b.p === 3 && b.w) || pd.bracket.find(b => b.r === maxR && b.m === 2 && b.w);
   pd.bracket.forEach(b => {
     const { r, m, t1, t2, w, l } = b;
     if (!w || !l) return;
@@ -6508,7 +6513,10 @@ function poComputeStats(pd) {
     const sw = sc[w]||0, sl = sc[l]||0;
     stats[w].gp++; stats[w].w++; stats[w].pts+=sw; stats[w].scores.push(sw);
     stats[l].gp++; stats[l].l++; stats[l].pts+=sl; stats[l].scores.push(sl);
-    if (r === maxR) { if (m===1){stats[w].finish=1;stats[l].finish=2;} else if (m===2){stats[w].finish=3;stats[l].finish=4;} }
+    if      (champMatch && b === champMatch) { stats[w].finish=1; stats[l].finish=2; }
+    else if (thirdMatch && b === thirdMatch) { stats[w].finish=3; stats[l].finish=4; }
+    else if (!champMatch && r === maxR && m===1) { stats[w].finish=1; stats[l].finish=2; }
+    else if (!thirdMatch && r === maxR && m===2) { stats[w].finish=3; stats[l].finish=4; }
   });
   // Mark bye teams
   Object.keys(stats).forEach(id => { if (!r1ids.has(parseInt(id))) stats[id].isBye=true; });
