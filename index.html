@@ -70,9 +70,10 @@
       padding: 9px 18px;
       cursor: pointer;
       margin-bottom: -1px;
-      transition: color .15s, border-color .15s;
       white-space: nowrap;
       touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
       border-radius: 0;
     }
     .sub-tab:hover { color: var(--text); }
@@ -3523,18 +3524,28 @@ function drawRoster(side, rosterId) {
   ts.rosterId=rosterId;
   const players=roster.players.map(pid=>{
     const fc=S.fcBySleeperId[String(pid)];
-    return { pid, name:fc?fc.player.name:'Unknown', pos:fc?fc.player.position:'?', team:fc&&fc.player.team?fc.player.team:'FA', value:fc?fc.value:0 };
+    const meta=S.playersMeta[String(pid)];
+    const pos=fc?fc.player.position:(meta?.pos||'?');
+    const team=fc?.player?.team||meta?.team||'';
+    const name=fc?fc.player.name:(meta?.name||(pos==='DEF'&&team?team+' D/ST':'Unknown'));
+    return { pid, name, pos, team, value:fc?fc.value:0 };
   }).sort((a,b)=>posOrder(a.pos)-posOrder(b.pos)||b.value-a.value);
 
   document.getElementById('roster'+side).innerHTML=players.map(p=>{
     const sel=ts.players.includes(p.pid);
+    const isDEF=p.pos==='DEF';
+    const avatar=isDEF&&p.team
+      ? `<img src="${NFL_LOGO(p.team)}" width="26" height="26" style="width:26px;height:26px;border-radius:4px;object-fit:contain;background:var(--surface2);border:1px solid var(--border);flex-shrink:0" onerror="this.style.display='none'">`
+      : hsImg(p.pid,26,p.pos);
+    const displayName=isDEF?(p.team?p.team+' D/ST':p.name):p.name;
+    const sub=isDEF?'Defense':(p.team||'FA');
     return `<div class="trade-v2-row ${sel?'selected':''}" onclick="togglePl('${side}','${p.pid}')">
       <div class="trade-v2-cb">&#x2713;</div>
-      ${hsImg(p.pid,26,p.pos)}
+      ${avatar}
       <span class="pos-badge pos-${p.pos}" style="font-size:.56rem">${p.pos}</span>
       <div class="trade-v2-pname">
-        <div class="trade-v2-pname-main">${p.name}</div>
-        <div class="trade-v2-pname-sub">${p.team}</div>
+        <div class="trade-v2-pname-main">${displayName}</div>
+        <div class="trade-v2-pname-sub">${sub}</div>
       </div>
       <span class="trade-v2-val">${p.value>0?p.value.toLocaleString():'—'}</span>
     </div>`;
