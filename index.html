@@ -4248,7 +4248,7 @@ const MVE = {
 // Tier breakpoints: how many ranked players fall in each tier (per position)
 const TIER_BREAKS = {
   QB: [2,  6, 12, 20],
-  RB: [7, 18, 32, 46],
+  RB: [10, 20, 34, 48],
   WR: [8, 24, 42, 58],
   TE: [2,  6, 12, 18],
 };
@@ -4357,7 +4357,7 @@ function mveActionTag(fc, tier, neutral, base) {
   if (tier >= 4 && age >= 29)                 return 'Sell';
   const cornerstoneMaxAge = { QB: 32, TE: 29, WR: 28, RB: 28 }[pos] || 28;
   if ((tier === 1 || base >= 8000) && age <= cornerstoneMaxAge) return 'Cornerstone';
-  if (age <= 23 && tier >= 3)                 return 'Speculative';
+  if (age <= 23 && tier >= 2)                 return 'Speculative';
   if (pos === 'RB' && tier === 2 && age >= 29) return 'Shop';
   if (tier === 3 && age >= 28 && pos !== 'QB') return 'Shop';
   if (tier <= 3 && age <= 29)                 return 'Hold';
