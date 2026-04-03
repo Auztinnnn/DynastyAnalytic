@@ -331,7 +331,7 @@
     .scout-player-row { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.04); }
     .scout-player-row:last-child { border-bottom: none; }
     .scout-player-name { flex: 1; font-size: .8rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .scout-player-owner { font-size: .65rem; color: var(--muted); white-space: nowrap; }
+    .scout-player-owner { font-size: .65rem; color: var(--muted); white-space: nowrap; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
     .scout-player-val { font-size: .72rem; font-weight: 600; color: var(--accent); min-width: 44px; text-align: right; }
     .scout-needs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
     .scout-team-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
@@ -341,6 +341,7 @@
     .scout-need { font-size: .6rem; padding: 2px 6px; border-radius: 3px; font-weight: 700; }
     .scout-need-critical { background: rgba(248,81,73,.15); color: #f85149; }
     .scout-need-weak { background: rgba(210,153,34,.12); color: var(--yellow); }
+    .scout-need-mod  { background: rgba(139,148,158,.1);  color: var(--muted); }
 
     /* WRAPPED */
     .wrapped-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 24px; }
@@ -4001,7 +4002,7 @@ function renderLeagueScouting() {
   const teams = Object.values(league.rosterMap).sort((a,b) => a.teamName.localeCompare(b.teamName));
   const profiles = teams.map(t => mveTeamProfile(t.rosterId, league)).filter(Boolean);
 
-  const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
 
   // League-wide Top Sells (Sell or Shop tagged, tier ≤ 4, sorted by value)
   const sells = [];
@@ -4012,14 +4013,12 @@ function renderLeagueScouting() {
   });
   sells.sort((a,b) => b.p.neutral - a.p.neutral);
 
-  // League-wide Top Buys (Buy or Speculative tagged, tier ≤ 3)
+  // League-wide Top Buys (Speculative tagged, tier ≤ 3)
   const buys = [];
   profiles.forEach(prof => {
     prof.speculativeList.forEach(p => {
       if (p.tier <= 3) buys.push({ p, owner: prof.teamName });
     });
-    prof.all.filter(p => p.actionTag === 'Buy' && p.tier <= 3 && !prof.speculativeList.includes(p))
-      .forEach(p => buys.push({ p, owner: prof.teamName }));
   });
   buys.sort((a,b) => b.p.neutral - a.p.neutral);
 
@@ -4040,14 +4039,14 @@ function renderLeagueScouting() {
   const buysHtml = buys.slice(0, 12).map(i => playerRow(i, true)).join('') ||
     `<div style="padding:12px;color:var(--muted);font-size:.8rem">No buy candidates found</div>`;
 
-  // Team needs grid — per team, which positions are critical/weak
+  // Team needs grid — per team, which positions need attention
   function teamNeedBadges(prof) {
     const badges = [];
     ['QB','RB','WR','TE'].forEach(pos => {
       const arr = prof.byPos[pos] || [];
-      if (!arr.length) { badges.push({ pos, level: 'critical' }); return; }
-      if (arr[0].tier >= 5) { badges.push({ pos, level: 'critical' }); return; }
-      if (arr[0].tier >= 4 && arr.length < 2) { badges.push({ pos, level: 'weak' }); return; }
+      if (!arr.length || arr[0].tier >= 5) { badges.push({ pos, level: 'critical' }); return; }
+      if (arr[0].tier >= 4)               { badges.push({ pos, level: 'weak' });     return; }
+      if (arr[0].tier >= 3)               { badges.push({ pos, level: 'mod' });      return; }
     });
     return badges;
   }
@@ -4073,14 +4072,12 @@ function renderLeagueScouting() {
     <div class="scout-top-grid" style="margin-bottom:20px">
       <div class="scout-box">
         <div class="scout-box-hdr">
-          <span class="signal-badge signal-sell" style="font-size:.6rem">SELL</span>
           Top Sell Opportunities
         </div>
         ${sellsHtml}
       </div>
       <div class="scout-box">
         <div class="scout-box-hdr">
-          <span class="signal-badge signal-buy" style="font-size:.6rem">BUY</span>
           Top Buy Opportunities
         </div>
         ${buysHtml}
