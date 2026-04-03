@@ -5632,6 +5632,12 @@ async function captureSectionAsPng(el, label) {
     tw.style.maxWidth = 'none';
   });
 
+  // html2canvas clips child backgrounds when a parent has overflow:hidden +
+  // border-radius — badges inside franchise cards go invisible in PNGs.
+  clone.querySelectorAll('.franchise-card').forEach(card => {
+    card.style.overflow = 'visible';
+  });
+
   // Off-screen fixed container — bypasses all mobile viewport constraints.
   // Use absolute (not fixed) so sticky children don't reference the viewport.
   const container = document.createElement('div');
