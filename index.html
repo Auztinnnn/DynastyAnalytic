@@ -371,6 +371,7 @@
 
     /* DYNASTY SIGNAL BADGE */
     .signal-badge { display:inline-flex;align-items:center;padding:2px 6px;border-radius:3px;font-size:.6rem;font-weight:700;letter-spacing:.04em;margin-left:auto; }
+    .signal-cornerstone { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.3); }
     .signal-buy  { background:rgba(63,185,80,.15); color:#3fb950; border:1px solid rgba(63,185,80,.3); }
     .signal-sell { background:rgba(248,81,73,.15);  color:#f85149; border:1px solid rgba(248,81,73,.3); }
     .signal-hold { background:rgba(210,153,34,.12); color:#d29922; border:1px solid rgba(210,153,34,.3); }
@@ -931,9 +932,10 @@
     .rank-num.bronze { background: linear-gradient(135deg,#c47a3a,#9a5a22); color:#fff; }
 
     /* ── Signal / buy-sell badges: inner highlight ────────── */
-    .signal-buy, .signal-sell, .signal-hold, .signal-stash {
+    .signal-cornerstone, .signal-buy, .signal-sell, .signal-hold, .signal-stash {
       box-shadow: inset 0 1px 0 rgba(255,255,255,.1);
     }
+    .signal-cornerstone { background: rgba(245,158,11,.12); }
     .signal-buy  { background: rgba(63,185,80,.12); }
     .signal-sell { background: rgba(248,81,73,.12); }
     .signal-hold { background: var(--gold-dim); border-color: rgba(232,182,58,.3); color: var(--gold); }
@@ -3115,7 +3117,7 @@ async function loadPlayersWeek(week) {
 
     // MVE dynasty intel row
     const mv = mvePlayer(pid, league);
-    const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+    const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
     const mvReasons = mv ? mveExplainPlayer(mv, league) : [];
     const dynastyRow = mv ? `
       <div style="display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap">
@@ -3830,7 +3832,7 @@ function renderScoutingReport(ridA, ridB) {
   const rA = league.rosterMap[ridA], rB = league.rosterMap[ridB];
   if (!rA || !rB) { el.innerHTML = ''; return; }
 
-  const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
 
   // Build MVE profiles for window/needs context
   const profA = mveTeamProfile(ridA, league);
@@ -3858,6 +3860,9 @@ function renderScoutingReport(ridA, ridB) {
     const age = parseInt(fc.player.age) || 25;
     const pos = fc.player.position;
     if (!['QB','RB','WR','TE'].includes(pos)) return null;
+
+    // Cornerstones are untouchable — never show as trade targets
+    if (mv.actionTag === 'Cornerstone') return null;
 
     let score = 0;
     const reasons = [];
@@ -3889,7 +3894,7 @@ function renderScoutingReport(ridA, ridB) {
     else if (posCountB >= 2 && mv.tier >= 3)   score += 8;
 
     // Age Curve: actively declining
-    if (pos === 'RB' && age >= 29 && mv.actionTag !== 'Buy') score += 8;
+    if (pos === 'RB' && age >= 29 && mv.actionTag !== 'Cornerstone') score += 8;
 
     // Situation Score: elevated risk = more likely available
     if (mv.riskScore >= 65) { score += 10; reasons.push('High risk'); }
@@ -4351,8 +4356,8 @@ function mveActionTag(fc, tier, neutral, base) {
   if (age >= 30 && pos === 'RB' && tier >= 3) return 'Sell';
   if (age >= 32 && tier >= 3)                 return 'Sell';
   if (tier >= 4 && age >= 29)                 return 'Sell';
-  if (age <= 22 && tier <= 2)                 return 'Buy';
-  if (base > 0 && (neutral-base)/base > 0.12 && tier <= 3) return 'Buy';
+  if (age <= 22 && tier <= 2)                 return 'Cornerstone';
+  if (base > 0 && (neutral-base)/base > 0.12 && tier <= 3) return 'Cornerstone';
   if (age <= 23 && tier >= 3)                 return 'Speculative';
   if (tier === 3 && age >= 28 && pos !== 'QB') return 'Shop';
   if (tier <= 3 && age <= 29)                 return 'Hold';
@@ -4518,7 +4523,7 @@ function mveTeamProfile(rosterId, league) {
   const actions        = mveTeamActions(classification, byPos, weightedAge, pickValue);
   const cornerstones   = all.filter(p=>p.tier<=2 && parseInt(p.age||99)<=29).slice(0,5);
   const sellHighList   = all.filter(p=>p.actionTag==='Sell'||p.actionTag==='Shop');
-  const speculativeList= all.filter(p=>p.actionTag==='Speculative'||p.actionTag==='Buy').slice(0,5);
+  const speculativeList= all.filter(p=>p.actionTag==='Speculative').slice(0,5);
 
   return {
     rosterId: parseInt(rosterId), teamName: roster.teamName, avatar: roster.avatar,
@@ -5662,16 +5667,14 @@ function buildFranchiseSnapshot(rosterId, league, profiles) {
 
 function buildTradeTargetsSummary(league, profiles) {
   if (!profiles || !profiles.length) return '';
-  const buys=[], sells=[];
+  const sells=[];
   profiles.forEach(prof => {
     prof.all.forEach(p => {
-      if (p.actionTag==='Buy'  && p.tier<=3) buys.push({name:p.name,pos:p.pos,owner:prof.teamName,val:p.neutral});
       if (p.actionTag==='Sell' && p.tier<=3) sells.push({name:p.name,pos:p.pos,owner:prof.teamName,val:p.neutral});
     });
   });
-  buys.sort((a,b)=>b.val-a.val); sells.sort((a,b)=>b.val-a.val);
+  sells.sort((a,b)=>b.val-a.val);
   let md = `**Dynasty Trade Targets**\n\n`;
-  if (buys.length)  { md += `📈 **Buy Low**\n`;  buys.slice(0,5).forEach(p=>{md+=`· ${p.name} (${p.pos}) — ${p.owner}\n`;}); md+='\n'; }
   if (sells.length) { md += `📉 **Sell High**\n`; sells.slice(0,5).forEach(p=>{md+=`· ${p.name} (${p.pos}) — ${p.owner}\n`;}); }
   return md.trim();
 }
@@ -6331,7 +6334,7 @@ function renderRosters() {
   // Sort each position group by dynasty value descending
   SKILL.forEach(pos => playersByPos[pos].sort((a, b) => b.value - a.value));
 
-  const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
 
   const renderPlayerCard = ({ pid, fc, meta, pos, mv }) => {
     const name    = fc?.player?.name || meta?.name || `Player ${pid}`;
@@ -6436,7 +6439,7 @@ async function openPlayerModal(pid) {
   const team = fc?.player?.team     || meta.team || '';
   const age  = fc?.player?.age      || meta.age  || null;
   const mv   = league ? mvePlayer(pid, league) : null;
-  const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
   const mvReasons = mv && league ? mveExplainPlayer(mv, league) : [];
 
   document.getElementById('roster-modal-content').innerHTML = `
@@ -7248,6 +7251,7 @@ function openRosterModal(rosterId) {
   const tagStyles = {
     Sell:       'background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)',
     Shop:       'background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3)',
+    Cornerstone:'background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)',
     Buy:        'background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)',
     Speculative:'background:rgba(163,113,247,.15);color:#a371f7;border:1px solid rgba(163,113,247,.3)',
     Hold:       'background:rgba(139,148,158,.1);color:#8b949e;border:1px solid rgba(139,148,158,.2)',
