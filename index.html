@@ -1385,6 +1385,40 @@
       transform: translateY(-1px);
       box-shadow: 0 6px 22px rgba(0,0,0,.4);
     }
+
+    /* ── Trade proposal cards ─────────────────────────────────── */
+    .proposal-card {
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s, transform .14s cubic-bezier(.22,1,.36,1);
+    }
+    .proposal-card:hover {
+      border-color: rgba(74,158,255,.45) !important;
+      box-shadow: 0 4px 18px rgba(0,0,0,.4);
+      transform: translateY(-1px);
+    }
+    .proposal-card.proposal-active {
+      border-color: rgba(74,158,255,.65) !important;
+      background: linear-gradient(180deg, rgba(74,158,255,.06) 0%, var(--surface) 60%) !important;
+      box-shadow: 0 0 0 1px rgba(74,158,255,.22), 0 6px 22px rgba(0,0,0,.4) !important;
+    }
+    /* Fix: proposal team columns must not overflow their grid cells */
+    .proposal-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .proposal-side  {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 7px; padding: 8px 10px;
+      min-width: 0; overflow: hidden;
+    }
+
+    /* ── Comparison footer: activated pulse ────────────────────── */
+    @keyframes comparisonPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(74,158,255,.45), 0 4px 24px rgba(0,0,0,.4); }
+      60%  { box-shadow: 0 0 0 8px rgba(74,158,255,.06), 0 6px 28px rgba(0,0,0,.45); }
+      100% { box-shadow: 0 0 0 0 rgba(74,158,255,0),    0 4px 24px rgba(0,0,0,.4); }
+    }
+    .trade-v2-footer.comparison-active {
+      border-color: rgba(74,158,255,.5);
+      animation: comparisonPulse .7s cubic-bezier(.22,1,.36,1) forwards;
+    }
   </style>
 </head>
 <body>
@@ -3758,7 +3792,7 @@ function drawPicks(side) {
 
 function togglePl(side,pid){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.players.indexOf(pid); if(idx>=0)ts.players.splice(idx,1);else ts.players.push(pid); drawRoster(side,ts.rosterId); updateProposal(); }
 function togglePick(side,key){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.picks.indexOf(key); if(idx>=0)ts.picks.splice(idx,1);else ts.picks.push(key); drawPicks(side); updateProposal(); }
-function onTradeTeam(side){ const id=parseInt(document.getElementById('tradeTeam'+side).value); const ts=side==='A'?S.tradeA:S.tradeB; ts.rosterId=id; ts.players=[]; ts.picks=[]; drawRoster(side,id); updateProposal(); }
+function onTradeTeam(side){ const id=parseInt(document.getElementById('tradeTeam'+side).value); const ts=side==='A'?S.tradeA:S.tradeB; ts.rosterId=id; ts.players=[]; ts.picks=[]; drawRoster(side,id); updateProposal(); const proposalOut=document.getElementById('trade-proposal-output'); if(proposalOut&&proposalOut.innerHTML.trim()) generateTradeProposal(); }
 function clearTrade(side){ const ts=side==='A'?S.tradeA:S.tradeB; ts.players=[]; ts.picks=[]; drawRoster(side,ts.rosterId); updateProposal(); }
 
 function generateTradeProposal() {
@@ -3940,6 +3974,9 @@ function generateTradeProposal() {
     return;
   }
 
+  // Store for click-to-apply
+  S.generatedProposals = proposals;
+
   // Render helpers
   function valOf(items) { return items.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0); }
 
@@ -3974,17 +4011,20 @@ function generateTradeProposal() {
     const balColor = balanced ? 'var(--green)' : imbalance <= TOLERANCE ? 'var(--yellow)' : '#f85149';
     const label = idx === 0 ? 'Best Match' : idx === 1 ? 'Alternative' : 'Option 3';
 
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:8px">
+    return `<div class="proposal-card" id="proposal-card-${idx}" onclick="applyProposal(${idx})" style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:.68rem;font-weight:700;color:var(--accent)">${label}</span>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="font-size:.68rem;font-weight:700;color:var(--accent)">${label}</span>
+          <span id="proposal-check-${idx}" style="display:none;font-size:.6rem;background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);border-radius:10px;padding:1px 8px;font-weight:700">✓ Applied</span>
+        </div>
         <span style="font-size:.63rem;font-weight:600;color:${balColor}">${favorsTxt} · ${vA.toLocaleString()} ↔ ${vB.toLocaleString()}</span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px">
+      <div class="proposal-sides">
+        <div class="proposal-side">
           <div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${profA.teamName} sends</div>
           ${prop.sideA.map(itemChip).join('')}
         </div>
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px">
+        <div class="proposal-side">
           <div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${profB.teamName} sends</div>
           ${prop.sideB.map(itemChip).join('')}
         </div>
@@ -3996,6 +4036,41 @@ function generateTradeProposal() {
     <div style="font-size:.7rem;font-weight:700;color:var(--text);margin-bottom:2px">💡 Suggested Trades</div>
     ${proposals.map((p, i) => proposalHtml(p, i)).join('')}
   </div>`;
+}
+
+function applyProposal(idx) {
+  const prop = S.generatedProposals && S.generatedProposals[idx];
+  if (!prop) return;
+
+  // Visual: mark active card, clear others
+  document.querySelectorAll('.proposal-card').forEach((el, i) => {
+    el.classList.toggle('proposal-active', i === idx);
+  });
+  document.querySelectorAll('[id^="proposal-check-"]').forEach((el, i) => {
+    el.style.display = i === idx ? 'inline-block' : 'none';
+  });
+
+  // Apply selections
+  S.tradeA.players = prop.sideA.filter(x => !x.isPick).map(x => x.pid);
+  S.tradeA.picks   = prop.sideA.filter(x =>  x.isPick).map(x => x.key);
+  S.tradeB.players = prop.sideB.filter(x => !x.isPick).map(x => x.pid);
+  S.tradeB.picks   = prop.sideB.filter(x =>  x.isPick).map(x => x.key);
+
+  // Redraw both roster panels to show selected checkboxes
+  drawRoster('A', S.tradeA.rosterId);
+  drawRoster('B', S.tradeB.rosterId);
+
+  // Activate the value comparison footer
+  updateProposal();
+
+  // Pulse the footer and scroll it into view
+  const footer = document.getElementById('trade-v2-footer');
+  if (footer) {
+    footer.classList.remove('comparison-active');
+    void footer.offsetWidth; // force reflow to restart animation
+    footer.classList.add('comparison-active');
+    footer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 }
 
 function toggleV2Mve(){ const b=document.getElementById('v2-mve-body'); const t=document.querySelector('.trade-v2-mve-toggle'); if(!b)return; const open=b.style.display!=='none'; b.style.display=open?'none':'block'; if(t)t.textContent=(open?'▼':'▲')+' MVE Analysis'; }
