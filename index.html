@@ -3622,8 +3622,7 @@ function renderTradeCalculator() {
           <span style="flex:1">Player</span>
           <span>Value</span>
         </div>
-        <div class="trade-v2-list" id="rosterA" style="max-height:340px"></div>
-        ${hasPicks ? `<div class="trade-v2-picks-hdr">Draft Picks</div><div class="trade-v2-list" id="picksA" style="max-height:180px"></div>` : ''}
+        <div class="trade-v2-list" id="rosterA" style="max-height:480px;overflow-y:auto"></div>
       </div>
       <div class="trade-v2-panel">
         <div class="trade-v2-header">
@@ -3636,8 +3635,7 @@ function renderTradeCalculator() {
           <span style="flex:1">Player</span>
           <span>Value</span>
         </div>
-        <div class="trade-v2-list" id="rosterB" style="max-height:340px"></div>
-        ${hasPicks ? `<div class="trade-v2-picks-hdr">Draft Picks</div><div class="trade-v2-list" id="picksB" style="max-height:180px"></div>` : ''}
+        <div class="trade-v2-list" id="rosterB" style="max-height:480px;overflow-y:auto"></div>
       </div>
     </div>
     <div style="text-align:center;margin:10px 0 4px">
@@ -3708,7 +3706,7 @@ function drawRoster(side, rosterId) {
     return { pid, name, pos, team, value:fc?fc.value:0 };
   }).sort((a,b)=>posOrder(a.pos)-posOrder(b.pos)||b.value-a.value);
 
-  document.getElementById('roster'+side).innerHTML=players.map(p=>{
+  const playerHtml = players.map(p=>{
     const sel=ts.players.includes(p.pid);
     const isDEF=p.pos==='DEF';
     const nflTeam=(S.playersMeta[String(p.pid)]?.team||p.team||'').replace(/^FA$/i,'');
@@ -3728,18 +3726,96 @@ function drawRoster(side, rosterId) {
       <span class="trade-v2-val">${p.value>0?p.value.toLocaleString():'—'}</span>
     </div>`;
   }).join('');
-  drawPicks(side);
+
+  // Render picks inline below players
+  const picks = getTeamPickList(ts.rosterId);
+  let picksHtml = '';
+  if (picks.length) {
+    const leagueBuckets = mveLeaguePickBuckets(league);
+    picksHtml = `<div class="trade-v2-picks-hdr">Draft Picks</div>` + picks.map(p => {
+      const sel    = ts.picks.includes(p.key);
+      const bkt    = p.round === 1 && S.fcValues.length
+        ? applyFutureGap(leagueBuckets[String(p.originalOwner)], p.season)
+        : null;
+      const val    = getPickValue(p.season, p.round, bkt && bkt.bucket);
+      const rColor = pickRoundColor(p.round);
+      const rdLabel= ['','1','2','3','4'][p.round] || p.round;
+      const name   = pickDisplayName(p);
+      const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
+      const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
+        ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">Proj</span>` : '';
+      return `<div class="trade-v2-row ${sel?'selected':''}" onclick="togglePick('${side}','${p.key}')">
+        <div class="trade-v2-cb">&#x2713;</div>
+        <span class="pick-badge" style="background:${hexA(rColor,.13)};color:${rColor};width:20px;height:20px;font-size:.62rem">${rdLabel}</span>
+        <div class="trade-v2-pname">
+          <div class="trade-v2-pname-main" style="display:flex;align-items:center;gap:4px">${name}${bktBadge}${srcNote}</div>
+        </div>
+        <span class="trade-v2-val" style="color:var(--yellow)">${val > 0 ? val.toLocaleString() : '—'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('roster'+side).innerHTML = playerHtml + picksHtml;
+}
+
+// League-relative pick bucket ranking — weakest team always gets Early, strongest Late
+// Uses relative rank within the league rather than absolute score thresholds
+let _leaguePickBucketsCache = null;
+let _leaguePickBucketsCacheId = null;
+function mveLeaguePickBuckets(league) {
+  const lid = S.currentLeagueId;
+  if (_leaguePickBucketsCache && _leaguePickBucketsCacheId === lid) return _leaguePickBucketsCache;
+  const B = PICK_BUCKET_CFG;
+  const teams = Object.values(league.rosterMap);
+  const scored = teams.map(r => {
+    const prof = mveTeamProfile(r.rosterId, league);
+    if (!prof) return { rosterId: r.rosterId, score: 50 };
+    const cls = (prof.classification && prof.classification.label) || 'Productive Middle';
+    const sv  = prof.starterValue || 0;
+    const age = prof.weightedAge  || 27;
+    const classScore = CLASS_STRENGTH[cls] !== undefined ? CLASS_STRENGTH[cls] : 50;
+    const svNorm = Math.max(0, Math.min(1, (sv - B.svMin) / (B.svMax - B.svMin))) * 100;
+    const ageScore = age < 25 ? 65 : age < 27 ? 58 : age < 29 ? 48 : age < 31 ? 35 : 22;
+    return { rosterId: r.rosterId, score: classScore * B.classWeight + svNorm * B.svWeight + ageScore * B.ageWeight };
+  }).sort((a, b) => a.score - b.score); // ascending: weakest (best pick) first
+
+  const n = scored.length;
+  const earlyCount = Math.ceil(n / 3);
+  const lateStart  = n - Math.floor(n / 3);
+  const result = {};
+  scored.forEach((t, i) => {
+    let bucket, confidence;
+    if (i < earlyCount) {
+      bucket = 'Early'; confidence = i === 0 ? 'high' : 'medium';
+    } else if (i >= lateStart) {
+      bucket = 'Late';  confidence = i === n - 1 ? 'high' : 'medium';
+    } else {
+      bucket = 'Mid';   confidence = 'medium';
+    }
+    result[String(t.rosterId)] = { bucket, confidence, score: Math.round(t.score), rank: i + 1, source: 'projected' };
+  });
+  _leaguePickBucketsCache = result;
+  _leaguePickBucketsCacheId = lid;
+  return result;
+}
+
+function applyFutureGap(bkt, season) {
+  if (!bkt) return null;
+  const yearGap = Math.max(0, parseInt(season) - new Date().getFullYear() - 1);
+  if (yearGap < PICK_BUCKET_CFG.futureGapPenalty) return bkt;
+  const confidence = bkt.confidence === 'high' ? 'medium' : 'low';
+  return { ...bkt, confidence };
 }
 
 // Resolve pick bucket from key (season_round_origOwner) — used for accurate valuation
 function getPickBucketForKey(key) {
   const pts = key.split('_');
-  const season = pts[0], round = parseInt(pts[1]), origOwner = parseInt(pts[2]);
+  const season = pts[0], round = parseInt(pts[1]), origOwner = pts[2];
   if (round !== 1 || !S.fcValues.length) return null;
   const league = ld();
   if (!league) return null;
-  const prof = mveTeamProfile(origOwner, league);
-  return prof ? mveProjectedPickBucket(prof, season) : null;
+  const buckets = mveLeaguePickBuckets(league);
+  return applyFutureGap(buckets[String(origOwner)] || null, season);
 }
 
 function getPickValueByKey(key) {
@@ -3748,51 +3824,9 @@ function getPickValueByKey(key) {
   return getPickValue(pts[0], parseInt(pts[1]), bkt && bkt.bucket);
 }
 
-function drawPicks(side) {
-  const el = document.getElementById('picks' + side);
-  if (!el) return;
-  const league = ld();
-  const ts = side === 'A' ? S.tradeA : S.tradeB;
-  const picks = getTeamPickList(ts.rosterId);
-  if (!picks.length) {
-    el.innerHTML = `<div style="color:var(--muted);font-size:.75rem;padding:4px 8px">No future picks</div>`;
-    return;
-  }
-  // Cache bucket projections per original owner to avoid re-computing
-  const bktCache = {};
-  function cachedBucket(origOwner, season, round) {
-    if (round !== 1 || !S.fcValues.length) return null;
-    const key = `${origOwner}_${season}`;
-    if (!bktCache[key]) {
-      const prof = league ? mveTeamProfile(origOwner, league) : null;
-      bktCache[key] = prof ? mveProjectedPickBucket(prof, season) : { bucket: 'Mid', confidence: 'low', source: 'fallback' };
-    }
-    return bktCache[key];
-  }
-
-  el.innerHTML = picks.map(p => {
-    const sel    = ts.picks.includes(p.key);
-    const bkt    = cachedBucket(p.originalOwner, p.season, p.round);
-    const val    = getPickValue(p.season, p.round, bkt && bkt.bucket);
-    const rColor = pickRoundColor(p.round);
-    const rdLabel= ['','1','2','3','4'][p.round] || p.round;
-    const name   = pickDisplayName(p);
-    const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
-    const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
-      ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">Proj</span>` : '';
-    return `<div class="trade-v2-row ${sel?'selected':''}" onclick="togglePick('${side}','${p.key}')">
-      <div class="trade-v2-cb">&#x2713;</div>
-      <span class="pick-badge" style="background:${hexA(rColor,.13)};color:${rColor};width:20px;height:20px;font-size:.62rem">${rdLabel}</span>
-      <div class="trade-v2-pname">
-        <div class="trade-v2-pname-main" style="display:flex;align-items:center;gap:4px">${name}${bktBadge}${srcNote}</div>
-      </div>
-      <span class="trade-v2-val" style="color:var(--yellow)">${val > 0 ? val.toLocaleString() : '—'}</span>
-    </div>`;
-  }).join('');
-}
 
 function togglePl(side,pid){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.players.indexOf(pid); if(idx>=0)ts.players.splice(idx,1);else ts.players.push(pid); drawRoster(side,ts.rosterId); updateProposal(); }
-function togglePick(side,key){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.picks.indexOf(key); if(idx>=0)ts.picks.splice(idx,1);else ts.picks.push(key); drawPicks(side); updateProposal(); }
+function togglePick(side,key){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.picks.indexOf(key); if(idx>=0)ts.picks.splice(idx,1);else ts.picks.push(key); drawRoster(side,ts.rosterId); updateProposal(); }
 function onTradeTeam(side){ const id=parseInt(document.getElementById('tradeTeam'+side).value); const ts=side==='A'?S.tradeA:S.tradeB; ts.rosterId=id; ts.players=[]; ts.picks=[]; drawRoster(side,id); updateProposal(); const proposalOut=document.getElementById('trade-proposal-output'); if(proposalOut&&proposalOut.innerHTML.trim()) generateTradeProposal(); }
 function clearTrade(side){ const ts=side==='A'?S.tradeA:S.tradeB; ts.players=[]; ts.picks=[]; drawRoster(side,ts.rosterId); updateProposal(); }
 
