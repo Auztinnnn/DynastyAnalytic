@@ -3412,10 +3412,11 @@ function drawRoster(side, rosterId) {
 
   document.getElementById('roster'+side).innerHTML=players.map(p=>{
     const sel=ts.players.includes(p.pid);
+    const nflTeam=(S.playersMeta[String(p.pid)]?.team||p.team||'').replace(/^FA$/i,'');
     return `<div class="player-row ${sel?'selected':''}" onclick="togglePl('${side}','${p.pid}')">
       ${hsImg(p.pid,32,p.pos)}
       <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-      <span class="player-name">${p.name}</span>
+      <span class="player-name">${p.name}${nflTeam?`<span style="font-size:.65rem;color:var(--muted);margin-left:4px">${nflTeam}</span>`:''}</span>
       <span class="player-value">${p.value>0?p.value.toLocaleString():'-'}</span>
     </div>`;
   }).join('');
@@ -3506,10 +3507,11 @@ function updateProposal() {
             : `<span title="KTC values lower by ${Math.abs(delta).toLocaleString()}" style="font-size:.6rem;color:var(--red);margin-left:2px">▼KTC</span>`;
         }
       }
+      const nflTeam = (S.playersMeta[String(pid)]?.team || (fc?.player?.team) || '').replace(/^FA$/i,'');
       return `<div class="trade-player-chip">
         ${hsImg(pid,28,pos)}
         <span class="pos-badge pos-${pos}" style="font-size:.58rem">${pos}</span>
-        <span style="flex:1;font-size:.8rem">${name}${ktcBadge}</span>
+        <span style="flex:1;font-size:.8rem;min-width:0">${name}${nflTeam ? `<span style="font-size:.65rem;color:var(--muted);margin-left:4px">${nflTeam}</span>` : ''}${ktcBadge}</span>
         <span style="color:var(--accent);font-size:.75rem">${val.toLocaleString()}</span>
         <span class="remove" onclick="togglePl('${side}','${pid}')">&#x2715;</span>
       </div>`;
@@ -3799,10 +3801,9 @@ function renderScoutingReport(ridA, ridB) {
       <div style="display:flex;align-items:center;gap:8px">
         ${hsImg(pid, 28, pos)}
         <span class="pos-badge pos-${pos}">${pos}</span>
-        <span style="flex:1;font-size:.82rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+        <span style="flex:1;font-size:.82rem;color:var(--text);min-width:0">${name}</span>
         <span style="font-size:.68rem;color:var(--muted);white-space:nowrap">age ${age}</span>
-        <span style="font-size:.72rem;color:var(--accent);min-width:42px;text-align:right">${mv.neutral.toLocaleString()}</span>
-        <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}" style="margin-left:0">${mv.actionTag}</span>
+        <span style="font-size:.72rem;color:var(--accent);min-width:42px;text-align:right;white-space:nowrap">${mv.neutral.toLocaleString()}</span>
       </div>${chips}
     </div>`;
   }
