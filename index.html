@@ -1358,9 +1358,11 @@
     <div class="sub-tabs">
       <button class="sub-tab active" data-sub="calculator" onclick="switchSubTab('trade','calculator')">Calculator</button>
       <button class="sub-tab" data-sub="scouting" onclick="switchSubTab('trade','scouting')">Scouting</button>
+      <button class="sub-tab" data-sub="rookies" onclick="switchSubTab('trade','rookies')">Rookie Board</button>
     </div>
     <div id="sub-trade-calculator" class="sub-panel active"><div id="trade-content"></div></div>
     <div id="sub-trade-scouting" class="sub-panel"><div id="trade-scouting-league"></div></div>
+    <div id="sub-trade-rookies" class="sub-panel"><div id="trade-rookie-board"></div></div>
   </div>
 
   <!-- HISTORY: Wrapped + Draft + Playoffs -->
@@ -3469,6 +3471,10 @@ function renderTradeCalculator() {
         ${hasPicks ? `<div class="trade-v2-picks-hdr">Draft Picks</div><div class="trade-v2-list" id="picksB" style="max-height:180px"></div>` : ''}
       </div>
     </div>
+    <div style="text-align:center;margin:10px 0 4px">
+      <button class="btn" onclick="generateTradeProposal()" style="font-size:.75rem;padding:6px 18px;background:var(--surface2);border:1px solid var(--border);color:var(--text)">💡 Generate Proposal</button>
+    </div>
+    <div id="trade-proposal-output" style="margin-bottom:8px"></div>
     <div class="trade-v2-footer" id="trade-v2-footer">
       <div class="trade-v2-footer-teams">
         <div class="trade-v2-t-side">
@@ -3619,6 +3625,116 @@ function togglePl(side,pid){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts
 function togglePick(side,key){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.picks.indexOf(key); if(idx>=0)ts.picks.splice(idx,1);else ts.picks.push(key); drawPicks(side); updateProposal(); }
 function onTradeTeam(side){ const id=parseInt(document.getElementById('tradeTeam'+side).value); const ts=side==='A'?S.tradeA:S.tradeB; ts.rosterId=id; ts.players=[]; ts.picks=[]; drawRoster(side,id); updateProposal(); }
 function clearTrade(side){ const ts=side==='A'?S.tradeA:S.tradeB; ts.players=[]; ts.picks=[]; drawRoster(side,ts.rosterId); updateProposal(); }
+
+function generateTradeProposal() {
+  const out = document.getElementById('trade-proposal-output');
+  if (!out) return;
+  const league = ld();
+  if (!league) { out.innerHTML = ''; return; }
+  const ridA = S.tradeA.rosterId, ridB = S.tradeB.rosterId;
+  if (!ridA || !ridB || ridA === ridB) { out.innerHTML = ''; return; }
+
+  const profA = mveTeamProfile(ridA, league);
+  const profB = mveTeamProfile(ridB, league);
+  if (!profA || !profB) { out.innerHTML = ''; return; }
+
+  // Weak positions for each team (tier 3+)
+  function weakPositions(prof) {
+    return ['QB','RB','WR','TE'].filter(pos => {
+      const arr = prof.byPos[pos] || [];
+      return !arr.length || arr[0].tier >= 3;
+    });
+  }
+  const weakA = weakPositions(profA);
+  const weakB = weakPositions(profB);
+
+  // Tradeable players: Sell/Shop on their roster, or surplus at a position (3+ players, weakest is tier 2+)
+  function tradeablePlayers(prof, weakOther) {
+    const out = [];
+    prof.all.forEach(p => {
+      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') { out.push({ ...p, reason: p.actionTag }); return; }
+      // Positional surplus: they have 3+ at this pos AND the other team needs it
+      if (weakOther.includes(p.pos)) {
+        const posArr = prof.byPos[p.pos] || [];
+        if (posArr.length >= 3 && p.tier <= 3) { out.push({ ...p, reason: 'Surplus' }); return; }
+      }
+    });
+    return out.sort((a, b) => b.neutral - a.neutral);
+  }
+
+  const offersFromA = tradeablePlayers(profA, weakB);
+  const offersFromB = tradeablePlayers(profB, weakA);
+
+  if (!offersFromA.length && !offersFromB.length) {
+    out.innerHTML = `<div style="font-size:.75rem;color:var(--muted);text-align:center;padding:8px">No obvious trade candidates — both rosters appear balanced. Consider a multi-team deal.</div>`;
+    return;
+  }
+
+  // Find best value-matched pair within 20%
+  let bestProposal = null;
+  const TOLERANCE = 0.20;
+
+  for (const pA of offersFromA.slice(0, 8)) {
+    for (const pB of offersFromB.slice(0, 8)) {
+      if (!weakA.includes(pB.pos) && !weakB.includes(pA.pos)) continue; // must address a need
+      const diff = Math.abs(pA.neutral - pB.neutral) / Math.max(pA.neutral, pB.neutral, 1);
+      if (diff <= TOLERANCE) {
+        if (!bestProposal || diff < bestProposal.diff) {
+          bestProposal = { pA, pB, diff, balanced: diff <= 0.08 };
+        }
+      }
+    }
+  }
+
+  // If no direct match, try adding a pick to the lower side
+  if (!bestProposal && offersFromA.length && offersFromB.length) {
+    const pA = offersFromA[0], pB = offersFromB[0];
+    const gap = pA.neutral - pB.neutral;
+    const absGap = Math.abs(gap);
+    if (absGap / Math.max(pA.neutral, pB.neutral) <= 0.40) {
+      bestProposal = { pA, pB, diff: absGap / Math.max(pA.neutral, pB.neutral), balanced: false, pickAdd: gap > 0 ? 'B' : 'A', pickGap: absGap };
+    }
+  }
+
+  if (!bestProposal) {
+    out.innerHTML = `<div style="font-size:.75rem;color:var(--muted);text-align:center;padding:8px">No clean single-player trade found. These rosters may need a 2-for-1 or multi-team deal.</div>`;
+    return;
+  }
+
+  const { pA, pB, balanced, pickAdd, pickGap } = bestProposal;
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const favors = pA.neutral > pB.neutral * 1.06 ? `Favors ${profA.teamName}` : pB.neutral > pA.neutral * 1.06 ? `Favors ${profB.teamName}` : 'Even';
+  const pickNote = pickAdd ? `<div style="font-size:.68rem;color:var(--yellow);margin-top:4px;text-align:center">+ ${pickAdd === 'B' ? profB.teamName : profA.teamName} adds ~${pickGap.toLocaleString()} in picks to balance</div>` : '';
+
+  function propCard(p, teamName) {
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;min-width:0">
+      <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">${teamName} sends</div>
+      <div style="display:flex;align-items:center;gap:7px">
+        ${hsImg(p.pid, 30, p.pos)}
+        <span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.8rem;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
+          <div style="font-size:.65rem;color:var(--muted)">${p.neutral.toLocaleString()} MVE</div>
+        </div>
+        <span class="signal-badge ${sigCls[p.actionTag]||'signal-hold'}">${p.actionTag}</span>
+      </div>
+      <div style="font-size:.62rem;color:var(--muted);margin-top:4px">Reason: ${p.reason}</div>
+    </div>`;
+  }
+
+  out.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:4px">
+    <div style="font-size:.7rem;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+      <span>💡 Suggested Trade</span>
+      <span style="font-size:.63rem;color:${balanced ? 'var(--green)' : 'var(--yellow)'};font-weight:600">${favors}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${propCard(pA, profA.teamName)}
+      ${propCard(pB, profB.teamName)}
+    </div>
+    ${pickNote}
+  </div>`;
+}
+
 function toggleV2Mve(){ const b=document.getElementById('v2-mve-body'); const t=document.querySelector('.trade-v2-mve-toggle'); if(!b)return; const open=b.style.display!=='none'; b.style.display=open?'none':'block'; if(t)t.textContent=(open?'▼':'▲')+' MVE Analysis'; }
 
 function updateProposal() {
@@ -4051,6 +4167,40 @@ function renderLeagueScouting() {
     return badges;
   }
 
+  // Buy-Low Targets: players with bullish KTC vs FC divergence (sentAdj > 0)
+  // or Speculative-tagged players with real value — on other rosters
+  const buyLowCandidates = [];
+  profiles.forEach(prof => {
+    prof.all.forEach(p => {
+      if (p.actionTag === 'Cornerstone' || p.actionTag === 'Sell') return;
+      const sentPct = p.fcValue > 0 ? (p.sentAdj || 0) / p.fcValue : 0;
+      const isKtcBull = sentPct > 0.08;
+      const isSpecVal = p.actionTag === 'Speculative' && p.neutral >= 1500;
+      if (isKtcBull || isSpecVal) {
+        buyLowCandidates.push({ p, owner: prof.teamName, sentPct });
+      }
+    });
+  });
+  buyLowCandidates.sort((a, b) => b.sentPct - a.sentPct || b.p.neutral - a.p.neutral);
+
+  const buyLowRows = buyLowCandidates.slice(0, 10).map(({ p, owner, sentPct }) => {
+    const ktcBadge = sentPct > 0.08
+      ? `<span style="font-size:.55rem;background:rgba(163,113,247,.15);color:#a371f7;border:1px solid rgba(163,113,247,.3);border-radius:3px;padding:1px 4px">↑ KTC +${(sentPct*100).toFixed(0)}%</span>`
+      : `<span style="font-size:.55rem;background:rgba(88,166,255,.1);color:var(--accent);border:1px solid rgba(88,166,255,.2);border-radius:3px;padding:1px 4px">Speculative</span>`;
+    return `<div class="scout-player-row">
+      ${hsImg(p.pid, 26, p.pos)}
+      <span class="pos-badge pos-${p.pos}" style="font-size:.55rem">${p.pos}</span>
+      <span class="scout-player-name">${p.name}</span>
+      <span class="scout-player-owner">${owner}</span>
+      ${ktcBadge}
+      <span class="scout-player-val">${p.neutral.toLocaleString()}</span>
+    </div>`;
+  }).join('');
+
+  const buyLowHtml = buyLowCandidates.length ? `
+    <div class="section-title" style="margin-top:20px;margin-bottom:10px">Buy-Low Targets ${tip('Players where KTC market sentiment is bullish (>8% above FC value) or high-value Speculative-tagged players. These are potentially undervalued on the trade market right now.')}</div>
+    <div class="scout-box" style="margin-bottom:20px">${buyLowRows}</div>` : '';
+
   const needsHtml = profiles.map(prof => {
     const badges = teamNeedBadges(prof);
     const cls = prof.classification;
@@ -4084,7 +4234,122 @@ function renderLeagueScouting() {
       </div>
     </div>
     <div class="section-title" style="margin-bottom:10px">Team Needs</div>
-    <div class="scout-needs-grid">${needsHtml}</div>`;
+    <div class="scout-needs-grid">${needsHtml}</div>
+    ${buyLowHtml}`;
+}
+
+// ── RENDER: ROOKIE BOARD ─────────────────────────────────────
+function renderRookieBoard() {
+  const el = document.getElementById('trade-rookie-board');
+  if (!el) return;
+  if (!S.fcValues.length) {
+    el.innerHTML = `<div class="warn-banner" style="margin-top:20px">Load a league with FantasyCalc values to see the Rookie Board.</div>`;
+    return;
+  }
+
+  const league = ld();
+  const curYear = new Date().getFullYear();
+
+  // Rookies = years_exp === 0, skill positions, positive value
+  const rookies = S.fcValues
+    .filter(fc => fc.player && ['QB','RB','WR','TE'].includes(fc.player.position)
+      && fc.player.years_exp === 0 && (fc.value || 0) > 0)
+    .sort((a, b) => (b.value || 0) - (a.value || 0));
+
+  // 1.01 value: top rookie's FC value vs FC RDP Early 1st
+  const rdpYear = String(curYear);
+  const rdpEarly = S.fcPickValues[rdpYear] && S.fcPickValues[rdpYear][1]
+    ? S.fcPickValues[rdpYear][1].early || S.fcPickValues[rdpYear][1].avg || 0
+    : 0;
+  const top1Val = rookies.length ? rookies[0].value : 0;
+  const valNote = top1Val > 0 && rdpEarly > 0
+    ? (top1Val > rdpEarly
+        ? `<span style="color:var(--green)">1.01 (${rookies[0].player.name}) trades <strong>above</strong> Early 1st market (${top1Val.toLocaleString()} vs ${rdpEarly.toLocaleString()} RDP)</span>`
+        : `<span style="color:var(--muted)">1.01 (${rookies[0].player.name}) at ${top1Val.toLocaleString()} — within Early 1st RDP range (${rdpEarly.toLocaleString()})</span>`)
+    : '';
+
+  // Team needs by position for each roster
+  const teamNeeds = {};
+  if (league) {
+    Object.values(league.rosterMap).forEach(roster => {
+      const prof = mveTeamProfile(roster.rosterId, league);
+      if (!prof) return;
+      const needs = [];
+      ['RB','WR','QB','TE'].forEach(pos => {
+        const arr = prof.byPos[pos] || [];
+        if (!arr.length || arr[0].tier >= 4) needs.push(pos);
+        else if (arr[0].tier >= 3) needs.push(pos);
+      });
+      teamNeeds[roster.rosterId] = { name: roster.teamName, needs };
+    });
+  }
+
+  // Which positions have the most need across the league
+  const posNeedCount = { QB:0, RB:0, WR:0, TE:0 };
+  Object.values(teamNeeds).forEach(t => t.needs.forEach(p => { if (posNeedCount[p] !== undefined) posNeedCount[p]++; }));
+
+  const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+
+  const rows = rookies.slice(0, 32).map((fc, i) => {
+    const slot = i < 12 ? `1.${String(i+1).padStart(2,'0')}` : i < 24 ? `2.${String(i-11).padStart(2,'0')}` : `3.${String(i-23).padStart(2,'0')}`;
+    const isFirstRound = i < 12;
+    const slotColor = i === 0 ? '#f59e0b' : i < 4 ? '#d29922' : i < 12 ? '#8b949e' : 'var(--muted)';
+    const pid = fc.player.sleeperId;
+    const mv = league ? mvePlayer(pid, league) : null;
+    const ktcVal = S.ktcBySleeperId[String(pid)] ? S.ktcBySleeperId[String(pid)].value : null;
+    const tag = mv ? mv.actionTag : 'Speculative';
+    const age = fc.player.age ? `${fc.player.age}` : '—';
+    // Demand badge: how many teams need this position
+    const demandCount = posNeedCount[fc.player.position] || 0;
+    const demandBadge = demandCount >= 6
+      ? `<span style="font-size:.55rem;background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.3);border-radius:3px;padding:1px 4px">High Demand</span>`
+      : demandCount >= 3
+      ? `<span style="font-size:.55rem;background:rgba(210,153,34,.12);color:var(--yellow);border:1px solid rgba(210,153,34,.3);border-radius:3px;padding:1px 4px">In Demand</span>`
+      : '';
+    return `<tr style="${!isFirstRound ? 'opacity:.8' : ''}">
+      <td style="font-size:.7rem;font-weight:700;color:${slotColor};white-space:nowrap;padding:6px 10px">${slot}</td>
+      <td style="padding:6px 4px">${hsImg(pid, 28, fc.player.position)}</td>
+      <td style="padding:6px 8px">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+          <span class="pos-badge pos-${fc.player.position}">${fc.player.position}</span>
+          <span style="font-size:.82rem;color:var(--text);font-weight:500">${fc.player.name}</span>
+          ${demandBadge}
+        </div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${fc.player.team || 'Unsigned'} · Age ${age}</div>
+      </td>
+      <td style="font-size:.75rem;color:var(--accent);text-align:right;padding:6px 8px;white-space:nowrap">${fc.value.toLocaleString()}</td>
+      <td style="font-size:.72rem;color:${ktcVal ? '#a371f7' : 'var(--muted)'};text-align:right;padding:6px 8px;white-space:nowrap">${ktcVal ? ktcVal.toLocaleString() : '—'}</td>
+      <td style="padding:6px 8px"><span class="signal-badge ${sigCls[tag]||'signal-hold'}">${tag}</span></td>
+    </tr>`;
+  }).join('');
+
+  // League needs summary
+  const needsSummary = Object.values(teamNeeds).map(t => {
+    if (!t.needs.length) return `<div class="scout-team-card"><div class="scout-team-name-row"><span class="scout-team-name">${t.name}</span></div><div class="scout-needs-row"><span style="font-size:.65rem;color:var(--green)">Solid</span></div></div>`;
+    const badges = t.needs.map(p => `<span class="scout-need scout-need-weak" style="background:${posColors[p]}22;color:${posColors[p]};border:1px solid ${posColors[p]}44">${p}</span>`).join('');
+    return `<div class="scout-team-card"><div class="scout-team-name-row"><span class="scout-team-name">${t.name}</span></div><div class="scout-needs-row">${badges}</div></div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="section-title" style="margin-bottom:6px">Rookie Board ${tip('Ranks all current-year rookies (years_exp=0) by FantasyCalc dynasty value. Pick slots are estimated by rank — 1.01 = highest-valued rookie. High Demand = 5+ teams weak at that position.')}</div>
+    ${valNote ? `<div style="font-size:.72rem;margin-bottom:14px;padding:6px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">${valNote}</div>` : ''}
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);background:var(--surface2)">
+            <th style="font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:7px 10px;text-align:left;white-space:nowrap">Slot</th>
+            <th style="padding:7px 4px"></th>
+            <th style="font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:7px 8px;text-align:left">Player</th>
+            <th style="font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:7px 8px;text-align:right">FC</th>
+            <th style="font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:7px 8px;text-align:right">KTC</th>
+            <th style="font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:7px 8px;text-align:left">Tag</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted);font-size:.8rem">No rookies found — FantasyCalc may not have current-year rookies loaded yet.</td></tr>'}</tbody>
+      </table>
+    </div>
+    ${league ? `<div class="section-title" style="margin-bottom:10px">Team Needs by Position</div><div class="scout-needs-grid">${needsSummary}</div>` : ''}`;
 }
 
 // ── RENDER: FANTASY WRAPPED ───────────────────────────────────
@@ -4930,6 +5195,27 @@ function renderFranchiseIntel() {
       `<div style="font-size:.71rem;color:var(--muted);padding:3px 0;border-top:1px solid var(--border);margin-top:3px">→ ${a}</div>`
     ).join('');
 
+    // Trajectory score
+    let traj = 0;
+    if (prof.weightedAge <= 25)       traj += 2;
+    else if (prof.weightedAge <= 27)  traj += 1;
+    else if (prof.weightedAge >= 30)  traj -= 2;
+    else if (prof.weightedAge >= 28.5) traj -= 1;
+    traj -= Math.min(3, prof.sellHighList.length);
+    if (prof.pickValue >= 15000)      traj += 2;
+    else if (prof.pickValue >= 8000)  traj += 1;
+    if (cl.label.includes('Rebuild')) traj += 1;
+    if (cl.label === 'Contender')     traj -= 1;
+    const trajCfg = traj >= 3
+      ? { arrow:'↑↑', label:'Rising',   color:'#22c55e' }
+      : traj >= 1
+      ? { arrow:'↑',  label:'Improving',color:'#86efac' }
+      : traj === 0
+      ? { arrow:'→',  label:'Stable',   color:'var(--muted)' }
+      : traj >= -2
+      ? { arrow:'↓',  label:'Declining',color:'var(--yellow)' }
+      : { arrow:'↓↓', label:'Falling',  color:'#f85149' };
+
     html += `<div class="franchise-card" id="fc-card-${prof.rosterId}">
       <button class="fc-hide-btn" onclick="toggleFranchiseCard(${prof.rosterId},this)" title="Hide from screenshot">✕</button>
       <div class="franchise-card-header">
@@ -4938,7 +5224,10 @@ function renderFranchiseIntel() {
           <div class="franchise-card-name" onclick="openRosterModal(${prof.rosterId})" title="View full roster">${prof.teamName}</div>
           <div style="margin-top:4px;display:flex;flex-direction:column;align-items:flex-start;gap:3px">
             <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
-            <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
+            <div style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
+              <span style="font-size:.63rem;font-weight:700;color:${trajCfg.color}">${trajCfg.arrow} ${trajCfg.label}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -6545,6 +6834,7 @@ function renderForSubTab(mainTab, subId) {
   else if (k==='players/trends')    renderTrendsTab();
   else if (k==='trade/calculator')   renderTradeCalculator();
   else if (k==='trade/scouting')     renderLeagueScouting();
+  else if (k==='trade/rookies')      renderRookieBoard();
   else if (k==='history/wrapped')   renderFantasyWrapped();
   else if (k==='history/draft')     renderDraftHistory();
   else if (k==='history/playoffs')  renderPlayoffs();
