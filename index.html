@@ -4355,7 +4355,7 @@ function mveActionTag(fc, tier, neutral, base) {
   if (age >= 30 && pos === 'RB' && tier >= 3) return 'Sell';
   if (age >= 32 && tier >= 3)                 return 'Sell';
   if (tier >= 4 && age >= 29)                 return 'Sell';
-  const cornerstoneMaxAge = { QB: 32, TE: 29, WR: 28, RB: 26 }[pos] || 28;
+  const cornerstoneMaxAge = { QB: 32, TE: 29, WR: 28, RB: 28 }[pos] || 28;
   if ((tier === 1 || base >= 8000) && age <= cornerstoneMaxAge) return 'Cornerstone';
   if (age <= 23 && tier >= 3)                 return 'Speculative';
   if (tier === 3 && age >= 28 && pos !== 'QB') return 'Shop';
@@ -4913,19 +4913,13 @@ function renderFranchiseIntel() {
       `<span class="pos-bar-seg" style="width:${(v/posTotal*100).toFixed(1)}%;background:${posColors[p]}" title="${p}: ${v.toLocaleString()}"></span>`
     ).join('');
 
-    // Key assets
-    const csList = prof.cornerstones.slice(0,3).map(p=>`
+    // Key assets — top 3 players by value
+    const top3 = prof.all.slice().sort((a,b)=>b.neutral-a.neutral).slice(0,3);
+    const csList = top3.map(p=>`
       <div class="franchise-asset-row">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="franchise-asset-name">${p.name}</span>
         <span class="franchise-asset-val">${p.neutral.toLocaleString()}</span>
-      </div>`).join('');
-
-    const sellList = prof.sellHighList.slice(0,3).map(p=>`
-      <div class="franchise-asset-row">
-        <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="franchise-asset-name">${p.name}</span>
-        <span class="signal-badge signal-${p.actionTag==='Sell'?'sell':'hold'}">${p.actionTag.toUpperCase()}</span>
       </div>`).join('');
 
     const pickBadges = prof.picks.slice(0,8).map(pk=>{
@@ -4980,14 +4974,9 @@ function renderFranchiseIntel() {
         </div>
       </div>
 
-      ${prof.cornerstones.length ? `<div>
-        <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Cornerstones</div>
+      ${top3.length ? `<div>
+        <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Top 3</div>
         <div class="franchise-assets">${csList}</div>
-      </div>` : ''}
-
-      ${prof.sellHighList.length ? `<div>
-        <div style="font-size:.68rem;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Sell / Shop</div>
-        <div class="franchise-assets">${sellList}</div>
       </div>` : ''}
 
       ${prof.picks.length ? `<div>
