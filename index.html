@@ -173,7 +173,7 @@
     .player-card-img { position: relative; flex-shrink: 0; line-height: 0; }
     .player-card-img .hs-lg { border-color: transparent; display: block; }
 
-    .player-card-body { flex: 1; min-width: 0; overflow: hidden; }
+    .player-card-body { flex: 1; min-width: 0; overflow: visible; }
 
     .player-card-meta {
       display: flex; align-items: center; gap: 5px; margin-bottom: 4px; flex-wrap: wrap;
@@ -205,6 +205,7 @@
     .nfl-team {
       font-size: .68rem; color: var(--muted); font-weight: 600;
       text-transform: uppercase; letter-spacing: .04em;
+      white-space: nowrap; flex-shrink: 0;
     }
 
     /* PLAYERS TAB CONTROLS */
@@ -232,6 +233,7 @@
     .pos-badge {
       font-size: .62rem; font-weight: 700; padding: 2px 5px;
       border-radius: 3px; letter-spacing: .02em;
+      white-space: nowrap; flex-shrink: 0;
     }
     .pos-QB { background: rgba(163,113,247,.2); color: #a371f7; }
     .pos-RB { background: rgba(63,185,80,.2);   color: #3fb950; }
@@ -330,7 +332,7 @@
     .scout-box-hdr { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: .8rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
     .scout-player-row { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.04); }
     .scout-player-row:last-child { border-bottom: none; }
-    .scout-player-name { flex: 1; font-size: .8rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .scout-player-name { font-size: .8rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .scout-player-owner { font-size: .65rem; color: var(--muted); white-space: nowrap; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
     .scout-player-val { font-size: .72rem; font-weight: 600; color: var(--accent); min-width: 44px; text-align: right; }
     .scout-needs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
@@ -371,7 +373,7 @@
     .inline-loading { text-align: center; padding: 40px 20px; color: var(--muted); font-size: .88rem; }
 
     /* DYNASTY SIGNAL BADGE */
-    .signal-badge { display:inline-flex;align-items:center;padding:2px 6px;border-radius:3px;font-size:.6rem;font-weight:700;letter-spacing:.04em;margin-left:auto; }
+    .signal-badge { display:inline-flex;align-items:center;padding:2px 6px;border-radius:3px;font-size:.6rem;font-weight:700;letter-spacing:.04em;white-space:nowrap;flex-shrink:0; }
     .signal-cornerstone { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.3); }
     .signal-buy  { background:rgba(63,185,80,.15); color:#3fb950; border:1px solid rgba(63,185,80,.3); }
     .signal-sell { background:rgba(248,81,73,.15);  color:#f85149; border:1px solid rgba(248,81,73,.3); }
@@ -408,7 +410,7 @@
     .franchise-asset-val { color:var(--accent);font-weight:600;font-size:.75rem; }
 
     .pick-capital-row { display:flex;flex-wrap:wrap;gap:5px;align-items:center; }
-    .pick-cap-badge { display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:.72rem; }
+    .pick-cap-badge { display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:.72rem;white-space:nowrap; }
 
     /* LEAGUE INTEL TABLE */
     .intel-sort-indicator { font-size:.65rem;margin-left:3px;opacity:.5; }
@@ -3291,11 +3293,11 @@ async function loadPlayersWeek(week) {
     const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
     const mvReasons = mv ? mveExplainPlayer(mv, league) : [];
     const dynastyRow = mv ? `
-      <div style="display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap">
-        <span style="font-size:.65rem;color:var(--muted);background:var(--surface2);border-radius:3px;padding:1px 5px">T${mv.tier}</span>
-        <span style="font-size:.68rem;color:var(--accent)">${mv.neutral.toLocaleString()}</span>
+      <div style="display:flex;align-items:center;gap:5px;margin-top:5px;overflow:hidden">
         <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}">${mv.actionTag}</span>
-        <span style="font-size:.6rem;color:var(--muted)">${mv.roleLabel}</span>
+        <span style="font-size:.65rem;color:var(--muted);background:var(--surface2);border-radius:3px;padding:1px 5px;flex-shrink:0">T${mv.tier}</span>
+        <span style="font-size:.68rem;color:var(--accent);flex-shrink:0" title="MVE-adjusted value (FC base: ${mv.fcValue.toLocaleString()})">${mv.neutral.toLocaleString()}</span>
+        <span style="font-size:.6rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mv.roleLabel}</span>
       </div>
       ${mvReasons.length ? `<div class="explain-chips" style="margin-top:3px">${mvReasons.slice(0,3).map(r=>`<span class="explain-chip">${r}</span>`).join('')}</div>` : ''}` : '';
 
@@ -4416,11 +4418,15 @@ function renderScoutingReport(ridA, ridB) {
     const chips = reasons && reasons.length
       ? `<div style="display:flex;gap:3px;margin-top:3px">${reasons.map(r => `<span style="font-size:.58rem;background:rgba(88,166,255,.07);color:var(--muted);border-radius:3px;padding:1px 5px">${r}</span>`).join('')}</div>`
       : '';
+    const nflTeamGP = (S.playersMeta[String(pid)]?.team || (fc?.player?.team) || '').replace(/^FA$/i, '');
     return `<div style="padding:6px 10px;border-radius:6px;background:var(--surface2);margin-bottom:4px">
       <div style="display:flex;align-items:center;gap:8px">
         ${hsImg(pid, 28, pos)}
         <span class="pos-badge pos-${pos}">${pos}</span>
-        <span style="flex:1;font-size:.82rem;color:var(--text);min-width:0">${name}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.82rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</div>
+          ${nflTeamGP ? `<div style="font-size:.6rem;color:var(--muted)">${nflTeamGP}</div>` : ''}
+        </div>
         <span style="font-size:.68rem;color:var(--muted);white-space:nowrap">age ${age}</span>
         <span style="font-size:.72rem;color:var(--accent);min-width:42px;text-align:right;white-space:nowrap">${mv.neutral.toLocaleString()}</span>
       </div>${chips}
@@ -4512,11 +4518,14 @@ function renderLeagueScouting() {
 
   function playerRow(item, showSignal) {
     const { p, owner } = item;
+    const nflTeam = (S.playersMeta[String(p.pid)]?.team || p.team || '').replace(/^FA$/i, '');
     return `<div class="scout-player-row">
       ${hsImg(p.pid, 26, p.pos)}
       <span class="pos-badge pos-${p.pos}" style="font-size:.55rem">${p.pos}</span>
-      <span class="scout-player-name">${p.name}</span>
-      <span class="scout-player-owner">${owner}</span>
+      <div style="flex:1;min-width:0;overflow:hidden">
+        <div class="scout-player-name">${p.name}</div>
+        ${nflTeam ? `<div style="font-size:.6rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nflTeam} · ${owner}</div>` : `<div style="font-size:.6rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${owner}</div>`}
+      </div>
       ${showSignal ? `<span class="signal-badge ${sigCls[p.actionTag]||'signal-hold'}" style="font-size:.58rem;padding:2px 5px">${p.actionTag}</span>` : ''}
       <span class="scout-player-val">${p.neutral.toLocaleString()}</span>
     </div>`;
@@ -4559,11 +4568,14 @@ function renderLeagueScouting() {
     const ktcBadge = sentPct > 0.08
       ? `<span style="font-size:.55rem;background:rgba(163,113,247,.15);color:#a371f7;border:1px solid rgba(163,113,247,.3);border-radius:3px;padding:1px 4px">↑ KTC +${(sentPct*100).toFixed(0)}%</span>`
       : `<span style="font-size:.55rem;background:rgba(88,166,255,.1);color:var(--accent);border:1px solid rgba(88,166,255,.2);border-radius:3px;padding:1px 4px">Speculative</span>`;
+    const nflTeamBL = (S.playersMeta[String(p.pid)]?.team || p.team || '').replace(/^FA$/i, '');
     return `<div class="scout-player-row">
       ${hsImg(p.pid, 26, p.pos)}
       <span class="pos-badge pos-${p.pos}" style="font-size:.55rem">${p.pos}</span>
-      <span class="scout-player-name">${p.name}</span>
-      <span class="scout-player-owner">${owner}</span>
+      <div style="flex:1;min-width:0;overflow:hidden">
+        <div class="scout-player-name">${p.name}</div>
+        ${nflTeamBL ? `<div style="font-size:.6rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nflTeamBL} · ${owner}</div>` : `<div style="font-size:.6rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${owner}</div>`}
+      </div>
       ${ktcBadge}
       <span class="scout-player-val">${p.neutral.toLocaleString()}</span>
     </div>`;
@@ -4688,7 +4700,7 @@ function renderRookieBoard() {
           <span style="font-size:.82rem;color:var(--text);font-weight:500">${fc.player.name}</span>
           ${demandBadge}
         </div>
-        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${fc.player.team || 'Unsigned'} · Age ${age}</div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${(S.playersMeta[String(pid)]?.team || fc.player.team || '').replace(/^FA$/i,'') || 'Unsigned'} · Age ${age}</div>
       </td>
       <td style="font-size:.75rem;color:var(--accent);text-align:right;padding:6px 8px;white-space:nowrap">${fc.value.toLocaleString()}</td>
       <td style="font-size:.72rem;color:${ktcVal ? '#a371f7' : 'var(--muted)'};text-align:right;padding:6px 8px;white-space:nowrap">${ktcVal ? ktcVal.toLocaleString() : '—'}</td>
