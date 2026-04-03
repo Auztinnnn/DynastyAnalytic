@@ -1921,8 +1921,7 @@ function mveProjectedPickBucket(teamProfile, season) {
 function pickBucketHtml(bucket, confidence) {
   if (!bucket || bucket === 'Mid') return '';
   const cls = `bucket-badge bucket-${bucket.toLowerCase()}${confidence === 'low' ? ' bucket-conf-low' : ''}`;
-  const confLabel = confidence !== 'high' ? ` <span style="font-size:.52rem;opacity:.75">${confidence}</span>` : '';
-  return `<span class="${cls}">${bucket}${confLabel}</span>`;
+  return `<span class="${cls}">${bucket}</span>`;
 }
 
 function pickRoundColor(round) {
@@ -3602,8 +3601,8 @@ function drawPicks(side) {
     const rdLabel= ['','1','2','3','4'][p.round] || p.round;
     const name   = pickDisplayName(p);
     const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
-    const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid'
-      ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">proj</span>` : '';
+    const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
+      ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">Proj</span>` : '';
     return `<div class="trade-v2-row ${sel?'selected':''}" onclick="togglePick('${side}','${p.key}')">
       <div class="trade-v2-cb">&#x2713;</div>
       <span class="pick-badge" style="background:${hexA(rColor,.13)};color:${rColor};width:20px;height:20px;font-size:.62rem">${rdLabel}</span>
