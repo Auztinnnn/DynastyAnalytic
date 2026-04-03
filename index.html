@@ -3638,6 +3638,9 @@ function generateTradeProposal() {
   const profB = mveTeamProfile(ridB, league);
   if (!profA || !profB) { out.innerHTML = ''; return; }
 
+  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
+  const TOLERANCE = 0.14; // within 14% = balanced
+
   // Weak positions for each team (tier 3+)
   function weakPositions(prof) {
     return ['QB','RB','WR','TE'].filter(pos => {
@@ -3648,90 +3651,215 @@ function generateTradeProposal() {
   const weakA = weakPositions(profA);
   const weakB = weakPositions(profB);
 
-  // Tradeable players: Sell/Shop on their roster, or surplus at a position (3+ players, weakest is tier 2+)
+  // Tradeable players: Sell/Shop first, then positional surplus, then any non-Cornerstone depth
   function tradeablePlayers(prof, weakOther) {
-    const out = [];
+    const result = [];
     prof.all.forEach(p => {
-      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') { out.push({ ...p, reason: p.actionTag }); return; }
-      // Positional surplus: they have 3+ at this pos AND the other team needs it
-      if (weakOther.includes(p.pos)) {
+      if (p.actionTag === 'Cornerstone') return;
+      let reason = null;
+      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') { reason = p.actionTag; }
+      else if (weakOther.includes(p.pos)) {
         const posArr = prof.byPos[p.pos] || [];
-        if (posArr.length >= 3 && p.tier <= 3) { out.push({ ...p, reason: 'Surplus' }); return; }
+        if (posArr.length >= 3 && p.tier <= 3) reason = 'Surplus';
+        else if (posArr.length >= 2 && p.tier >= 3) reason = 'Depth';
+      } else if (p.tier >= 3 && p.actionTag !== 'Cornerstone') {
+        reason = 'Depth';
       }
+      if (reason) result.push({ ...p, reason });
     });
-    return out.sort((a, b) => b.neutral - a.neutral);
+    return result.sort((a, b) => {
+      // Prioritize sell/shop, then surplus, then by value
+      const pri = { Sell:0, Shop:1, Surplus:2, Depth:3 };
+      return (pri[a.reason]||3) - (pri[b.reason]||3) || b.neutral - a.neutral;
+    });
   }
 
-  const offersFromA = tradeablePlayers(profA, weakB);
-  const offersFromB = tradeablePlayers(profB, weakA);
-
-  if (!offersFromA.length && !offersFromB.length) {
-    out.innerHTML = `<div style="font-size:.75rem;color:var(--muted);text-align:center;padding:8px">No obvious trade candidates — both rosters appear balanced. Consider a multi-team deal.</div>`;
-    return;
+  // Available picks with value
+  function teamPicksWithValue(rosterId) {
+    return getTeamPickList(rosterId).map(pk => {
+      const bkt = getPickBucketForKey(pk.key);
+      const val = getPickValue(pk.season, pk.round, bkt && bkt.bucket);
+      const name = pickDisplayName(pk);
+      return { ...pk, val, name, isPick: true };
+    }).filter(pk => pk.val > 0).sort((a, b) => b.val - a.val);
   }
 
-  // Find best value-matched pair within 20%
-  let bestProposal = null;
-  const TOLERANCE = 0.20;
+  const playersA = tradeablePlayers(profA, weakB);
+  const playersB = tradeablePlayers(profB, weakA);
+  const picksA   = teamPicksWithValue(ridA);
+  const picksB   = teamPicksWithValue(ridB);
 
-  for (const pA of offersFromA.slice(0, 8)) {
-    for (const pB of offersFromB.slice(0, 8)) {
-      if (!weakA.includes(pB.pos) && !weakB.includes(pA.pos)) continue; // must address a need
-      const diff = Math.abs(pA.neutral - pB.neutral) / Math.max(pA.neutral, pB.neutral, 1);
-      if (diff <= TOLERANCE) {
-        if (!bestProposal || diff < bestProposal.diff) {
-          bestProposal = { pA, pB, diff, balanced: diff <= 0.08 };
-        }
+  // Score a proposal: lower = better
+  // Rewards: value balance, needs addressed, sell signal cleared
+  function scoreProposal(sideA, sideB) {
+    const valA = sideA.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0);
+    const valB = sideB.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0);
+    if (!valA || !valB) return Infinity;
+    const maxVal = Math.max(valA, valB);
+    const imbalance = Math.abs(valA - valB) / maxVal;
+    if (imbalance > 0.35) return Infinity; // too uneven to consider
+
+    let needsScore = 0;
+    // Reward filling a weak position for each side
+    sideB.filter(x => !x.isPick).forEach(p => { if (weakA.includes(p.pos)) needsScore += 2; });
+    sideA.filter(x => !x.isPick).forEach(p => { if (weakB.includes(p.pos)) needsScore += 2; });
+    // Reward clearing sell signals
+    sideA.filter(x => !x.isPick && (x.reason === 'Sell' || x.reason === 'Shop')).forEach(() => needsScore += 1);
+    sideB.filter(x => !x.isPick && (x.reason === 'Sell' || x.reason === 'Shop')).forEach(() => needsScore += 1);
+
+    return imbalance * 10 - needsScore;
+  }
+
+  // Generate candidate proposals: 1v1, 2v1, 1v2, 2v2, each with pick sweeteners
+  const candidates = [];
+  const maxP = 6; // max players to consider per side
+
+  const pA = playersA.slice(0, maxP);
+  const pB = playersB.slice(0, maxP);
+
+  // Helper: try to balance a gap with picks from the given pick pool
+  function pickSweetener(gap, pickPool) {
+    // gap > 0 means this side needs to add value; pick from their pool
+    if (gap <= 0) return [];
+    const added = [];
+    let remaining = gap;
+    for (const pk of pickPool) {
+      if (remaining <= 0) break;
+      // Only add a pick if it meaningfully closes the gap (>30% of remaining)
+      if (pk.val >= remaining * 0.3) {
+        added.push(pk);
+        remaining -= pk.val;
       }
     }
+    return added;
   }
 
-  // If no direct match, try adding a pick to the lower side
-  if (!bestProposal && offersFromA.length && offersFromB.length) {
-    const pA = offersFromA[0], pB = offersFromB[0];
-    const gap = pA.neutral - pB.neutral;
-    const absGap = Math.abs(gap);
-    if (absGap / Math.max(pA.neutral, pB.neutral) <= 0.40) {
-      bestProposal = { pA, pB, diff: absGap / Math.max(pA.neutral, pB.neutral), balanced: false, pickAdd: gap > 0 ? 'B' : 'A', pickGap: absGap };
+  // 1v1
+  for (const a of pA) for (const b of pB) {
+    const gap = b.neutral - a.neutral; // positive = A is getting more, needs to add
+    const sweetsA = gap > 200 ? pickSweetener(gap * 0.7, picksA) : [];
+    const sweetsB = gap < -200 ? pickSweetener(-gap * 0.7, picksB) : [];
+    const sideA = [a, ...sweetsA];
+    const sideB = [b, ...sweetsB];
+    candidates.push({ sideA, sideB, score: scoreProposal(sideA, sideB) });
+  }
+
+  // 2v1: A sends 2, B sends 1 star
+  for (let i = 0; i < Math.min(pA.length, 5); i++) for (let j = i+1; j < Math.min(pA.length, 5); j++) {
+    for (const b of pB.slice(0, 4)) {
+      const sideA = [pA[i], pA[j]];
+      const sideB = [b];
+      candidates.push({ sideA, sideB, score: scoreProposal(sideA, sideB) });
     }
   }
 
-  if (!bestProposal) {
-    out.innerHTML = `<div style="font-size:.75rem;color:var(--muted);text-align:center;padding:8px">No clean single-player trade found. These rosters may need a 2-for-1 or multi-team deal.</div>`;
+  // 1v2: A sends 1 star, B sends 2
+  for (const a of pA.slice(0, 4)) {
+    for (let i = 0; i < Math.min(pB.length, 5); i++) for (let j = i+1; j < Math.min(pB.length, 5); j++) {
+      const sideA = [a];
+      const sideB = [pB[i], pB[j]];
+      candidates.push({ sideA, sideB, score: scoreProposal(sideA, sideB) });
+    }
+  }
+
+  // 2v2
+  for (let i = 0; i < Math.min(pA.length, 4); i++) for (let j = i+1; j < Math.min(pA.length, 4); j++) {
+    for (let k = 0; k < Math.min(pB.length, 4); k++) for (let l = k+1; l < Math.min(pB.length, 4); l++) {
+      const sideA = [pA[i], pA[j]];
+      const sideB = [pB[k], pB[l]];
+      candidates.push({ sideA, sideB, score: scoreProposal(sideA, sideB) });
+    }
+  }
+
+  // Pick-only sweetener proposals (when player pools are thin)
+  if (pA.length && picksB.length) {
+    const a = pA[0];
+    const sweetsB = pickSweetener(a.neutral * 0.85, picksB);
+    if (sweetsB.length) candidates.push({ sideA: [a], sideB: sweetsB, score: scoreProposal([a], sweetsB) });
+  }
+  if (pB.length && picksA.length) {
+    const b = pB[0];
+    const sweetsA = pickSweetener(b.neutral * 0.85, picksA);
+    if (sweetsA.length) candidates.push({ sideA: sweetsA, sideB: [b], score: scoreProposal(sweetsA, [b]) });
+  }
+
+  // Sort and dedupe (skip proposals with same players)
+  candidates.sort((a, b) => a.score - b.score);
+
+  // Pick top 3 distinct proposals
+  const seen = new Set();
+  const proposals = [];
+  for (const c of candidates) {
+    if (c.score === Infinity) continue;
+    const key = [...c.sideA.map(x => x.isPick ? x.key : x.pid).sort(),
+                  '|',
+                  ...c.sideB.map(x => x.isPick ? x.key : x.pid).sort()].join(',');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    proposals.push(c);
+    if (proposals.length >= 3) break;
+  }
+
+  if (!proposals.length) {
+    out.innerHTML = `<div style="font-size:.75rem;color:var(--muted);text-align:center;padding:8px">No viable trade structure found — rosters may be too balanced or both teams lack tradeable assets.</div>`;
     return;
   }
 
-  const { pA, pB, balanced, pickAdd, pickGap } = bestProposal;
-  const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
-  const favors = pA.neutral > pB.neutral * 1.06 ? `Favors ${profA.teamName}` : pB.neutral > pA.neutral * 1.06 ? `Favors ${profB.teamName}` : 'Even';
-  const pickNote = pickAdd ? `<div style="font-size:.68rem;color:var(--yellow);margin-top:4px;text-align:center">+ ${pickAdd === 'B' ? profB.teamName : profA.teamName} adds ~${pickGap.toLocaleString()} in picks to balance</div>` : '';
+  // Render helpers
+  function valOf(items) { return items.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0); }
 
-  function propCard(p, teamName) {
-    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;min-width:0">
-      <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">${teamName} sends</div>
-      <div style="display:flex;align-items:center;gap:7px">
-        ${hsImg(p.pid, 30, p.pos)}
-        <span class="pos-badge pos-${p.pos}">${p.pos}</span>
+  function itemChip(x) {
+    if (x.isPick) {
+      const rc = pickRoundColor(x.round);
+      return `<div style="display:flex;align-items:center;gap:5px;padding:4px 0">
+        <span class="pick-badge" style="background:${hexA(rc,.13)};color:${rc};width:18px;height:18px;font-size:.58rem;flex-shrink:0">${x.round}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:.8rem;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-          <div style="font-size:.65rem;color:var(--muted)">${p.neutral.toLocaleString()} MVE</div>
+          <div style="font-size:.75rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.name}</div>
+          <div style="font-size:.62rem;color:var(--yellow)">${x.val.toLocaleString()}</div>
         </div>
-        <span class="signal-badge ${sigCls[p.actionTag]||'signal-hold'}">${p.actionTag}</span>
+      </div>`;
+    }
+    return `<div style="display:flex;align-items:center;gap:5px;padding:4px 0">
+      ${hsImg(x.pid, 26, x.pos)}
+      <span class="pos-badge pos-${x.pos}" style="font-size:.52rem;flex-shrink:0">${x.pos}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.75rem;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x.name}</div>
+        <div style="font-size:.62rem;color:var(--muted)">${x.neutral.toLocaleString()} · ${x.reason}</div>
       </div>
-      <div style="font-size:.62rem;color:var(--muted);margin-top:4px">Reason: ${p.reason}</div>
+      <span class="signal-badge ${sigCls[x.actionTag]||'signal-hold'}" style="font-size:.52rem;padding:1px 4px">${x.actionTag}</span>
     </div>`;
   }
 
-  out.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:4px">
-    <div style="font-size:.7rem;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
-      <span>💡 Suggested Trade</span>
-      <span style="font-size:.63rem;color:${balanced ? 'var(--green)' : 'var(--yellow)'};font-weight:600">${favors}</span>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      ${propCard(pA, profA.teamName)}
-      ${propCard(pB, profB.teamName)}
-    </div>
-    ${pickNote}
+  function proposalHtml(prop, idx) {
+    const vA = valOf(prop.sideA), vB = valOf(prop.sideB);
+    const maxV = Math.max(vA, vB, 1);
+    const imbalance = Math.abs(vA - vB) / maxV;
+    const balanced = imbalance <= 0.08;
+    const favorsTxt = vA > vB * 1.06 ? `Favors ${profA.teamName}` : vB > vA * 1.06 ? `Favors ${profB.teamName}` : 'Even';
+    const balColor = balanced ? 'var(--green)' : imbalance <= TOLERANCE ? 'var(--yellow)' : '#f85149';
+    const label = idx === 0 ? 'Best Match' : idx === 1 ? 'Alternative' : 'Option 3';
+
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:.68rem;font-weight:700;color:var(--accent)">${label}</span>
+        <span style="font-size:.63rem;font-weight:600;color:${balColor}">${favorsTxt} · ${vA.toLocaleString()} ↔ ${vB.toLocaleString()}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px">
+          <div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${profA.teamName} sends</div>
+          ${prop.sideA.map(itemChip).join('')}
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px">
+          <div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${profB.teamName} sends</div>
+          ${prop.sideB.map(itemChip).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  out.innerHTML = `<div style="margin-top:4px">
+    <div style="font-size:.7rem;font-weight:700;color:var(--text);margin-bottom:2px">💡 Suggested Trades</div>
+    ${proposals.map((p, i) => proposalHtml(p, i)).join('')}
   </div>`;
 }
 
