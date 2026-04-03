@@ -1256,7 +1256,7 @@
 
 <!-- ── MOBILE TOP BAR (hidden on desktop) ─────────────────── -->
 <div id="mobile-topbar">
-  <span class="m-logo" onclick="switchTab('league')" style="cursor:pointer"><img src="./front-office-logo.png" alt="Front Office" style="width:150px;height:auto;display:block"></span>
+  <span class="m-logo"><img src="./front-office-logo.png" alt="Front Office" onclick="switchTab('league')" style="width:150px;height:auto;display:block;cursor:pointer"></span>
   <button id="nav-hamburger" onclick="mobileNavOpen()" aria-label="Open navigation">☰</button>
 </div>
 <!-- ── MOBILE OVERLAY ──────────────────────────────────────── -->
@@ -4355,7 +4355,8 @@ function mveActionTag(fc, tier, neutral, base) {
   if (age >= 30 && pos === 'RB' && tier >= 3) return 'Sell';
   if (age >= 32 && tier >= 3)                 return 'Sell';
   if (tier >= 4 && age >= 29)                 return 'Sell';
-  if ((tier === 1 || base >= 8000) && age <= 28) return 'Cornerstone';
+  const cornerstoneMaxAge = { QB: 32, TE: 29, WR: 28, RB: 26 }[pos] || 28;
+  if ((tier === 1 || base >= 8000) && age <= cornerstoneMaxAge) return 'Cornerstone';
   if (age <= 23 && tier >= 3)                 return 'Speculative';
   if (tier === 3 && age >= 28 && pos !== 'QB') return 'Shop';
   if (tier <= 3 && age <= 29)                 return 'Hold';
