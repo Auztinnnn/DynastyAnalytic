@@ -1251,6 +1251,140 @@
       .rm-team-name { font-size:1.15rem; }
       .rm-player-grid { grid-template-columns:1fr; }
     }
+
+    /* ══════════════════════════════════════════════════════════
+       UX POLISH LAYER — transitions · hover lift · table quality
+    ══════════════════════════════════════════════════════════ */
+
+    /* ── Tab / sub-panel entrance animation ──────────────────── */
+    @keyframes panelFadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .tab-content.active { animation: panelFadeUp .22s cubic-bezier(.22,1,.36,1) both; }
+    .sub-panel.active   { animation: panelFadeUp .18s cubic-bezier(.22,1,.36,1) both; }
+
+    /* ── Card hover: lift + glow ──────────────────────────────── */
+    .card {
+      transition: border-color .15s, box-shadow .15s, transform .18s cubic-bezier(.22,1,.36,1);
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(74,158,255,.32);
+      box-shadow: 0 8px 28px rgba(0,0,0,.5), 0 0 0 1px rgba(74,158,255,.18);
+    }
+
+    /* ── Franchise card hover: lift ──────────────────────────── */
+    .franchise-card {
+      transition: border-color .18s, box-shadow .18s, transform .18s cubic-bezier(.22,1,.36,1);
+    }
+    .franchise-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(74,158,255,.3);
+      box-shadow: 0 10px 36px rgba(0,0,0,.55);
+    }
+
+    /* ── Player card hover: lift ──────────────────────────────── */
+    .player-card {
+      transition: border-color .15s, box-shadow .15s, transform .15s cubic-bezier(.22,1,.36,1);
+    }
+    .player-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(74,158,255,.42);
+      box-shadow: 0 6px 22px rgba(0,0,0,.4);
+    }
+
+    /* ── Roster modal player card hover: lift + depth ─────────── */
+    .rm-player-card {
+      transition: border-color .15s, transform .14s cubic-bezier(.22,1,.36,1), box-shadow .15s;
+    }
+    .rm-player-card:hover {
+      border-color: rgba(255,255,255,.2);
+      box-shadow: 0 4px 18px rgba(0,0,0,.45);
+      transform: translateY(-1px);
+    }
+
+    /* ── Bar fill: animate expand from left on render ─────────── */
+    .bar-bg { overflow: hidden; }
+    .bar-fill {
+      animation: barSlideIn .6s cubic-bezier(.4,0,.2,1) both;
+      transform-origin: left center;
+    }
+    @keyframes barSlideIn {
+      from { transform: scaleX(0); }
+      to   { transform: scaleX(1); }
+    }
+
+    /* ── Table: sticky header gets a shadow separator ─────────── */
+    thead th {
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    }
+
+    /* ── Table: sorted column header highlight ────────────────── */
+    thead th.srt-on {
+      background: rgba(74,158,255,.07) !important;
+    }
+
+    /* ── Table: numeric cell classes ─────────────────────────── */
+    .td-r {
+      text-align: right !important;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .01em;
+    }
+    .th-r { text-align: right !important; }
+
+    /* ── Table row hover: snappier transition ─────────────────── */
+    tbody tr { transition: background .08s; }
+
+    /* ── Weekly score table: high/low cell background tints ────── */
+    td.week-high {
+      background: rgba(232,182,58,.1) !important;
+    }
+    td.week-low {
+      background: rgba(248,81,73,.07) !important;
+    }
+
+    /* ── Inline mini-bars for table cells ─────────────────────── */
+    .cell-bar { display: inline-flex; align-items: center; gap: 7px; width: 100%; }
+    .cell-bar-bg { flex: 1; height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; min-width: 36px; }
+    .cell-bar-fill {
+      height: 100%; border-radius: 2px;
+      animation: barSlideIn .6s cubic-bezier(.4,0,.2,1) both;
+      transform-origin: left center;
+    }
+
+    /* ── Skeleton shimmer for loading states ──────────────────── */
+    @keyframes shimmer {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(200%); }
+    }
+    .skeleton {
+      background: var(--surface2); border-radius: 4px;
+      overflow: hidden; position: relative;
+    }
+    .skeleton::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.05) 50%, transparent 100%);
+      animation: shimmer 1.6s infinite;
+    }
+
+    /* ── Wrapped cards: hover lift ────────────────────────────── */
+    .wrapped-card {
+      transition: border-color .15s, box-shadow .15s, transform .15s cubic-bezier(.22,1,.36,1);
+    }
+    .wrapped-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(0,0,0,.55), inset 0 1px 0 rgba(74,158,255,.1);
+    }
+
+    /* ── Playoff / record cards: hover lift ───────────────────── */
+    .po-record-card, .what-wins-card {
+      transition: border-color .15s, box-shadow .15s, transform .15s cubic-bezier(.22,1,.36,1);
+    }
+    .po-record-card:hover, .what-wins-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(0,0,0,.4);
+    }
   </style>
 </head>
 <body>
@@ -2222,10 +2356,10 @@ function renderOverview() {
     <div class="card"><div class="card-label">Most Robbed</div><div class="card-value" style="font-size:1rem;color:var(--red)">${sorted[sorted.length-1].teamName}</div><div class="card-sub">${fmt(sorted[sorted.length-1].luck)} wins under expected</div></div>
   </div>
   <div class="section"><div class="section-title">Luck of Schedule <span class="section-note">Luck = actual wins minus expected wins based on all-play rate</span></div>
-  <div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Record</th><th>All-Play</th><th>All-Play Win%</th><th>Avg Pts/Wk</th><th>Total Pts</th><th>Luck Score</th></tr></thead><tbody>`;
+  <div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th class="th-r">Record</th><th class="th-r">All-Play</th><th class="th-r">All-Play Win%</th><th class="th-r">Avg Pts/Wk</th><th class="th-r">Total Pts</th><th class="th-r">Luck Score</th></tr></thead><tbody>`;
   [...data].sort((a,b)=>(b.wins+b.ties*.5)-(a.wins+a.ties*.5)||b.fpts-a.fpts).forEach((t,i)=>{
     const lc=t.luck>.5?'pos-c':t.luck<-.5?'neg':'neutral';
-    html+=`<tr><td>${badge(i+1)}</td><td class="bold">${t.teamName}</td><td>${t.wins}-${t.losses}${t.ties>0?'-'+t.ties:''}</td><td>${t.ap.wins}-${t.ap.losses}</td><td>${(t.apPct*100).toFixed(1)}%</td><td>${fmtP(t.avgPts)}</td><td>${fmtP(t.fpts)}</td><td class="${lc}">${t.luck>=0?'+':''}${fmt(t.luck)}</td></tr>`;
+    html+=`<tr><td>${badge(i+1)}</td><td class="bold">${t.teamName}</td><td class="td-r">${t.wins}-${t.losses}${t.ties>0?'-'+t.ties:''}</td><td class="td-r">${t.ap.wins}-${t.ap.losses}</td><td class="td-r">${(t.apPct*100).toFixed(1)}%</td><td class="td-r">${fmtP(t.avgPts)}</td><td class="td-r">${fmtP(t.fpts)}</td><td class="td-r ${lc}">${t.luck>=0?'+':''}${fmt(t.luck)}</td></tr>`;
   });
   html+=`</tbody></table></div></div>`;
   html+=renderScheduleMatrix(league);
@@ -2787,7 +2921,7 @@ function renderPowerRankings() {
     const rfMax=Math.max(...rankings.map(x=>x.recentPts));
     const rfW=rfMax>0?(r.recentPts/rfMax*100).toFixed(1):'0';
     html+=`<tr><td>${badge(i+1)}</td><td class="bold">${r.teamName}</td><td>${tb}</td>`;
-    if (hasFC) html+=`<td style="color:var(--text)">${r.posTotals.total.toLocaleString()}</td><td>${rankPill(r.posRanks.QB||'-',total)}</td><td>${rankPill(r.posRanks.RB||'-',total)}</td><td>${rankPill(r.posRanks.WR||'-',total)}</td><td>${rankPill(r.posRanks.TE||'-',total)}</td>`;
+    if (hasFC) html+=`<td class="td-r" style="color:var(--text)">${r.posTotals.total.toLocaleString()}</td><td class="td-r">${rankPill(r.posRanks.QB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.RB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.WR||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.TE||'-',total)}</td>`;
     html+=`<td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmtP(r.recentPts)}</div><div class="bar-bg"><div class="bar-fill" style="width:${rfW}%;background:var(--green)"></div></div></div></td><td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmt(r.powerScore)}</div><div class="bar-bg"><div class="bar-fill" style="width:${r.powerScore.toFixed(1)}%;background:var(--purple)"></div></div></div></td></tr>`;
   });
   html+=`</tbody></table></div></div>`;
@@ -2835,10 +2969,11 @@ function renderPowerRankings() {
 
 function chartOpts(yLabel) {
   return {
+    animation: { duration: 550, easing: 'easeOutQuart' },
     responsive:true, maintainAspectRatio:false,
     plugins:{
       legend:{ position:'left', labels:{ color:'#8b949e', font:{ size:11 }, padding:12, boxWidth:14 } },
-      tooltip:{ backgroundColor:'#1c2333', borderColor:'#21262d', borderWidth:1, titleColor:'#e6edf3', bodyColor:'#8b949e', callbacks:{ label:ctx=>' '+ctx.dataset.label+': '+ctx.raw.toLocaleString() } }
+      tooltip:{ backgroundColor:'#192338', borderColor:'#1e2d42', borderWidth:1, titleColor:'#e8edf3', bodyColor:'#8b949e', padding:10, cornerRadius:8, callbacks:{ label:ctx=>' '+ctx.dataset.label+': '+ctx.raw.toLocaleString() } }
     },
     layout:{ padding:0 },
     scales:{
@@ -5585,7 +5720,7 @@ function renderLeagueIntel() {
     const active = liSortCol === col;
     const arrow  = active ? (liSortAsc ? '▲' : '▼') : '<span style="opacity:.3">↕</span>';
     const tooltip = TIPS[col] ? tip(TIPS[col]) : '';
-    return `<th class="${active?'intel-sort-active':''}" onclick="liSort('${col}')" style="white-space:nowrap">${label}${tooltip} ${arrow}</th>`;
+    return `<th class="${active?'intel-sort-active':''}" onclick="liSort('${col}')" style="white-space:nowrap;text-align:right">${label}${tooltip} ${arrow}</th>`;
   }
 
   let html = `<div class="section-title">League Intelligence ${tip('Side-by-side dynasty snapshot of every team. All values are MVE-adjusted (age, role, tier, and sentiment layered on top of raw FantasyCalc). Click any column header to sort.')}
@@ -5612,16 +5747,16 @@ function renderLeagueIntel() {
     html += `<tr>
       <td>${badge(i+1)}</td>
       <td class="bold">${p.teamName}</td>
-      <td>${rankPill(i+1,total)} ${p.totalValue.toLocaleString()}</td>
-      <td>${p.starterValue.toLocaleString()}</td>
-      <td>${p.totalVAR.toLocaleString()}</td>
-      <td class="${p.weightedAge<=25?'age-young':p.weightedAge>=29.5?'age-old':'age-mid'}">${p.weightedAge}</td>
-      <td>${p.avgLiq.toFixed(0)}</td>
-      <td style="color:var(--yellow)">${p.pickValue.toLocaleString()}</td>
-      <td style="color:#a371f7">${p.qbVal.toLocaleString()}</td>
-      <td style="color:#3fb950">${p.rbVal.toLocaleString()}</td>
-      <td style="color:#58a6ff">${p.wrVal.toLocaleString()}</td>
-      <td style="color:#fb8500">${p.teVal.toLocaleString()}</td>
+      <td class="td-r">${rankPill(i+1,total)} ${p.totalValue.toLocaleString()}</td>
+      <td class="td-r">${p.starterValue.toLocaleString()}</td>
+      <td class="td-r">${p.totalVAR.toLocaleString()}</td>
+      <td class="td-r ${p.weightedAge<=25?'age-young':p.weightedAge>=29.5?'age-old':'age-mid'}">${p.weightedAge}</td>
+      <td class="td-r">${p.avgLiq.toFixed(0)}</td>
+      <td class="td-r" style="color:var(--yellow)">${p.pickValue.toLocaleString()}</td>
+      <td class="td-r" style="color:#a371f7">${p.qbVal.toLocaleString()}</td>
+      <td class="td-r" style="color:#3fb950">${p.rbVal.toLocaleString()}</td>
+      <td class="td-r" style="color:#58a6ff">${p.wrVal.toLocaleString()}</td>
+      <td class="td-r" style="color:#fb8500">${p.teVal.toLocaleString()}</td>
       <td><span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border};font-size:.62rem">${cl.label}</span></td>
     </tr>`;
   });
