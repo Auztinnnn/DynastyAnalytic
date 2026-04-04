@@ -2381,7 +2381,7 @@ function getClassBanner(year) {
   else label = 'Weak';
 
   // Top names
-  const topNames = rookies.slice(0, 3).map(fc => fc.player.name).join(', ');
+  const topNames = rookies.slice(0, 3).map(fc => `${fc.player.name} (${fc.player.position})`).join(', ');
 
   // Position breakdown across the first round (12 slots)
   const posCounts = {};
@@ -2404,7 +2404,7 @@ function getClassBanner(year) {
     }
   }
 
-  const note = `${topNames} headline${posNote ? ` a ${posNote}` : ''} the class${ktcNote}`;
+  const note = `${topNames} headline the class${posNote ? ` · ${posNote}` : ''}${ktcNote}`;
   return { label, note };
 }
 
