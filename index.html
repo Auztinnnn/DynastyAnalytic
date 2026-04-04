@@ -2437,42 +2437,39 @@ function computeStorylines(league) {
   if (hotTeam)  stories.push({icon:'🔥', text:`<strong>${hotTeam.teamName}</strong> has won ${hotTeam.streak} straight and is on a hot streak`});
   if (coldTeam) stories.push({icon:'📉', text:`<strong>${coldTeam.teamName}</strong> has dropped ${coldTeam.streak} straight — searching for answers`});
 
-  // Recent form vs overall standings movement
-  const fullStandings = [...teams].sort((a,b) => {
-    const wA = weekResults[a.rosterId].filter(r=>r.won).length;
-    const wB = weekResults[b.rosterId].filter(r=>r.won).length;
-    if (wB !== wA) return wB-wA;
-    return weekResults[b.rosterId].reduce((s,r)=>s+r.pts,0) - weekResults[a.rosterId].reduce((s,r)=>s+r.pts,0);
-  });
-  const rankMap = {};
-  fullStandings.forEach((t,i) => { rankMap[t.rosterId] = i+1; });
+  // Standing movement: compare actual cumulative standings 3 weeks ago vs now
+  function standingsRank(upToWeekIndex) {
+    const wins = {}, pts = {};
+    teams.forEach(t => { wins[t.rosterId] = 0; pts[t.rosterId] = 0; });
+    for (let i = 0; i <= upToWeekIndex; i++) {
+      const {data} = completedWeeks[i];
+      const pairs = {};
+      data.forEach(t => { if(t.matchup_id){if(!pairs[t.matchup_id])pairs[t.matchup_id]=[];pairs[t.matchup_id].push(t);} });
+      Object.values(pairs).forEach(pair => {
+        if(pair.length!==2) return;
+        const [a,b]=pair; const aW=(a.points||0)>(b.points||0);
+        if(wins[a.roster_id]!==undefined){ wins[a.roster_id]+=aW?1:0; pts[a.roster_id]+=a.points||0; }
+        if(wins[b.roster_id]!==undefined){ wins[b.roster_id]+=aW?0:1; pts[b.roster_id]+=b.points||0; }
+      });
+    }
+    const ranked = [...teams].sort((a,b) => wins[b.rosterId]!==wins[a.rosterId] ? wins[b.rosterId]-wins[a.rosterId] : pts[b.rosterId]-pts[a.rosterId]);
+    const map = {};
+    ranked.forEach((t,i) => { map[t.rosterId] = i+1; });
+    return map;
+  }
 
-  const recentResults = {};
-  teams.forEach(t => { recentResults[t.rosterId] = {wins:0, pts:0}; });
-  completedWeeks.slice(-3).forEach(({data}) => {
-    const pairs = {};
-    data.forEach(t => { if(t.matchup_id){if(!pairs[t.matchup_id])pairs[t.matchup_id]=[];pairs[t.matchup_id].push(t);} });
-    Object.values(pairs).forEach(pair => {
-      if(pair.length!==2) return;
-      const [a,b]=pair; const aW=(a.points||0)>(b.points||0);
-      if(recentResults[a.roster_id]){recentResults[a.roster_id].wins+=aW?1:0;recentResults[a.roster_id].pts+=a.points||0;}
-      if(recentResults[b.roster_id]){recentResults[b.roster_id].wins+=aW?0:1;recentResults[b.roster_id].pts+=b.points||0;}
-    });
-  });
-  const recentRankMap = {};
-  [...teams].sort((a,b)=>{
-    const rA=recentResults[a.rosterId], rB=recentResults[b.rosterId];
-    return rB.wins!==rA.wins ? rB.wins-rA.wins : rB.pts-rA.pts;
-  }).forEach((t,i) => { recentRankMap[t.rosterId]=i+1; });
+  const lastIdx = completedWeeks.length - 1;
+  const nowRank  = standingsRank(lastIdx);
+  const thenRank = standingsRank(Math.max(0, lastIdx - 3));
 
   const movements = teams.map(t => ({
     teamName:t.teamName,
-    move:(rankMap[t.rosterId]||99) - (recentRankMap[t.rosterId]||99),
+    move: thenRank[t.rosterId] - nowRank[t.rosterId], // positive = climbed (was lower rank number before)
   }));
   const climber = movements.filter(m=>m.move>=3).sort((a,b)=>b.move-a.move)[0];
   const faller  = movements.filter(m=>m.move<=-3).sort((a,b)=>a.move-b.move)[0];
-  if (climber && !hotTeam)  stories.push({icon:'📈', text:`<strong>${climber.teamName}</strong> has climbed ${climber.move} spots over the last 3 weeks`});
-  if (faller  && !coldTeam) stories.push({icon:'🧊', text:`<strong>${faller.teamName}</strong> has dropped ${Math.abs(faller.move)} spots over the last 3 weeks`});
+  if (climber && !hotTeam)  stories.push({icon:'📈', text:`<strong>${climber.teamName}</strong> has climbed ${climber.move} spots in the standings over the last 3 weeks`});
+  if (faller  && !coldTeam) stories.push({icon:'🧊', text:`<strong>${faller.teamName}</strong> has dropped ${Math.abs(faller.move)} spots in the standings over the last 3 weeks`});
 
   // Contender tier parity / rebuild wave
   if (S.fcValues.length) {
