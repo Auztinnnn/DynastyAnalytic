@@ -1974,6 +1974,11 @@ async function loadSleeperPlayers() {
             if (S.fcBySleeperId[pid]) S.fcBySleeperId[pid].player.age = age;
           }
         }
+        // Back-fill years_exp from Sleeper (authoritative) so Rookie Board filter works
+        if (pl.years_exp !== undefined) {
+          existing.years_exp = pl.years_exp;
+          if (S.fcBySleeperId[pid]) S.fcBySleeperId[pid].player.years_exp = pl.years_exp;
+        }
       } else if (rosterPids.has(pid) && (pl.position === 'K' || pl.position === 'DEF')) {
         // Add K and DEF players that are on rosters but not in FC data
         S.playersMeta[pid] = {
@@ -1991,6 +1996,7 @@ async function loadSleeperPlayers() {
     // Re-draw trade rosters so K/DEF show correctly as soon as meta is ready
     if (S.tradeA?.rosterId) drawRoster('A', S.tradeA.rosterId);
     if (S.tradeB?.rosterId) drawRoster('B', S.tradeB.rosterId);
+    if (document.getElementById('trade-rookie-board')) renderRookieBoard();
   } catch(e) { console.warn('Sleeper players fetch failed:', e); }
 }
 
@@ -4986,10 +4992,10 @@ function renderRookieBoard() {
   const league = ld();
   const curYear = new Date().getFullYear();
 
-  // Rookies = years_exp === 0 or null/undefined (pre-draft prospects not yet assigned), skill positions, positive value
+  // Rookies = years_exp === 0 (Sleeper back-fills this after loadSleeperPlayers), skill positions, positive value
   const rookies = S.fcValues
     .filter(fc => fc.player && ['QB','RB','WR','TE'].includes(fc.player.position)
-      && (fc.player.years_exp == null || fc.player.years_exp === 0) && (fc.value || 0) > 0)
+      && fc.player.years_exp === 0 && (fc.value || 0) > 0)
     .sort((a, b) => (b.value || 0) - (a.value || 0));
 
   // 1.01 value: top rookie's FC value vs FC RDP Early 1st
