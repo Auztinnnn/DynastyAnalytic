@@ -2292,12 +2292,12 @@ function pickRoundColor(round) {
 // ── BOARD-DRIVEN ROOKIE PICK VALUATION ────────────────────────
 // Class-year sentiment profiles for future picks (no board exists yet)
 const ROOKIE_CLASS_PROFILES = {
-  // Strength multipliers per bucket: Early 1st → topEndStrength, Mid 1st → overallStrength, Late 1st → depthStrength
+  // Strength multipliers per bucket: Early 1st = topEndStrength, Mid 1st = overallStrength, Late 1st = depthStrength
   2025: { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 },
-  // 2026: average overall class with 1 cornerstone prospect — top picks get a premium,
+  // 2026: average overall class with 1 cornerstone prospect - top picks get a premium,
   // but depth is below average so mid/late 1sts are discounted relative to a normal year
   2026: { topEndStrength: 1.08, depthStrength: 0.97, overallStrength: 1.00 },
-  // 2027: strong class with multiple elite prospects — all buckets elevated,
+  // 2027: strong class with multiple elite prospects - all buckets elevated,
   // top picks most so (multiple cornerstones), meaningful depth as well
   2027: { topEndStrength: 1.12, depthStrength: 1.06, overallStrength: 1.09 },
   2028: { topEndStrength: 1.05, depthStrength: 1.02, overallStrength: 1.03 },
