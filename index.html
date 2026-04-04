@@ -2954,12 +2954,15 @@ function renderPowerRankings() {
   if (!hasFC) html+=`<div class="warn-banner">FantasyCalc values could not be loaded. Rankings use recent scoring only.</div>`;
   html+=`<div class="section"><div class="section-title">Roster Value by Position ${tip('Stacked bar showing total FantasyCalc dynasty trade value for each team, broken out by position. Taller bar = more total dynasty capital. Does not reflect age or window — use Franchise Intel for that.')} <span class="section-note">${hasFC?'FantasyCalc dynasty values | '+fmtLabel:'Recent form only'}</span></div><div class="chart-wrap power-chart-wrap"><canvas id="powerChart"></canvas></div></div>`;
   html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe, Productive Middle, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
+  const rfAvg = rankings.reduce((s,r)=>s+r.recentPts,0) / (rankings.length||1);
   rankings.forEach((r,i)=>{
     const cls = mveClassMap[r.rosterId] || { label:'—', color:'#8b949e', bg:'rgba(148,163,184,.1)' };
     const tb=`<span class="tier-badge" style="background:${cls.bg};color:${cls.color};border:1px solid ${cls.border||cls.color+'66'}">${cls.label}</span>`;
     const rfMax=Math.max(...rankings.map(x=>x.recentPts));
     const rfW=rfMax>0?(r.recentPts/rfMax*100).toFixed(1):'0';
-    html+=`<tr><td>${badge(i+1)}</td><td class="bold">${r.teamName}</td><td>${tb}</td>`;
+    const recentTrend = r.recentPts > rfAvg * 1.12 ? 'hot' : r.recentPts < rfAvg * 0.88 ? 'cold' : 'mid';
+    const vibe = powerRankingVibe(i+1, total, recentTrend);
+    html+=`<tr><td>${badge(i+1)}</td><td class="bold">${r.teamName}<br><span style="font-size:.62rem;color:var(--muted);font-weight:400;font-style:italic">${vibe}</span></td><td>${tb}</td>`;
     if (hasFC) html+=`<td class="td-r" style="color:var(--text)">${r.posTotals.total.toLocaleString()}</td><td class="td-r">${rankPill(r.posRanks.QB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.RB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.WR||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.TE||'-',total)}</td>`;
     html+=`<td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmtP(r.recentPts)}</div><div class="bar-bg"><div class="bar-fill" style="width:${rfW}%;background:var(--green)"></div></div></div></td><td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmt(r.powerScore)}</div><div class="bar-bg"><div class="bar-fill" style="width:${r.powerScore.toFixed(1)}%;background:var(--purple)"></div></div></div></td></tr>`;
   });
@@ -3681,6 +3684,7 @@ function renderTradeCalculator() {
         <div class="trade-v2-bar-a" id="v2-bar-a" style="width:50%"></div>
         <div class="trade-v2-bar-b" id="v2-bar-b" style="width:50%"></div>
       </div>
+      <div id="v2-trash-talk" style="display:none;text-align:center;font-size:.72rem;font-style:italic;padding:4px 12px 2px;transition:opacity .2s"></div>
       <div class="trade-v2-sel-row" id="v2-sel-row" style="display:none">
         <div class="trade-v2-sel-side">
           <div class="trade-v2-sel-label" id="v2-sel-label-a">Team A gives</div>
@@ -4212,6 +4216,8 @@ function updateProposal() {
     if (selRow) selRow.style.display='none';
     const detEl = document.getElementById('v2-detail');
     if (detEl) detEl.style.display='none';
+    const ttEl = document.getElementById('v2-trash-talk');
+    if (ttEl) ttEl.style.display='none';
     return;
   }
 
@@ -4233,15 +4239,19 @@ function updateProposal() {
   }
 
   // Arrows point toward winner; "Trade Favors" label
+  const trashEl = document.getElementById('v2-trash-talk');
   if (pct < .06) {
     if (arrowsEl) arrowsEl.textContent = '•';
     if (favLblEl) favLblEl.textContent = 'Fair Trade';
+    if (trashEl) { const tt = tradeTrashTalk(pct, '', ''); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   } else if (vB > vA) {
     if (arrowsEl) arrowsEl.innerHTML = '<span style="color:var(--green)">⟨⟨⟨</span>';
     if (favLblEl) favLblEl.textContent = 'Trade Favors';
+    if (trashEl) { const tt = tradeTrashTalk(pct, rB ? rB.teamName : 'B', rA ? rA.teamName : 'A'); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   } else {
     if (arrowsEl) arrowsEl.innerHTML = '<span style="color:var(--green)">⟩⟩⟩</span>';
     if (favLblEl) favLblEl.textContent = 'Trade Favors';
+    if (trashEl) { const tt = tradeTrashTalk(pct, rA ? rA.teamName : 'A', rB ? rB.teamName : 'B'); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   }
 
   // Bar: left (green) = what Team A receives / total; right (red) = what Team B receives / total
@@ -5600,6 +5610,121 @@ function renderRosters() {
   <div class="rosters-grid">${cards}</div>`;
 }
 
+// ════════════════════════════════════════════════════════════════
+// FUN COMMENTARY — roasts, trash talk, vibes
+// ════════════════════════════════════════════════════════════════
+
+const FRANCHISE_ROASTS = {
+  'Contender': [
+    "The rest of the league is shaking. 👑",
+    "Built different. No notes. 🔥",
+    "Window's open. Don't blow it. 🏆",
+    "This is your year. No excuses. 💪",
+    "Top tier. Literally. 😤",
+    "Championship or we're not talking. 🥇",
+  ],
+  'Fringe': [
+    "So close yet so far. Classic. 😬",
+    "One good trade away... allegedly. 🤞",
+    "The 'almost' team. Trademarked. ™️",
+    "Right on the bubble, as always. 🫧",
+    "Dangerous enough to scare you, fragile enough to disappoint. 💀",
+  ],
+  'Productive Middle': [
+    "Peak mediocrity achieved. 🤷",
+    "The Switzerland of this league. ⚖️",
+    "Comfortably average and embracing it. 😌",
+    "Not last. Not first. A vibe. ✨",
+    "Locked in at 6th place. Very locked in. 🔒",
+    "The participation trophy is real. 🏅",
+  ],
+  'Retool': [
+    "It's not a rebuild, it's a 'strategic reset'. 🔧",
+    "Somewhere between good and bad. Committing to neither. 😶",
+    "The squad is at a crossroads. Bring a GPS. 🗺️",
+    "Championship window: check back later. 📆",
+    "Retooling. A fancy word for 'figure it out'. 🤔",
+  ],
+  'Rebuild': [
+    "Trust the process. 📈 (please)",
+    "Picks, picks, everywhere picks. 🎯",
+    "This hurts now but 2026 is going to be DIFFERENT. 🌅",
+    "The glow-up is in progress. Be patient. ⏳",
+    "Tanking with dignity. Allegedly. 📉",
+  ],
+  'Rebuilding': [
+    "Sir, this is a Wendy's. 🍔",
+    "Every pick is a lottery ticket. 🎟️",
+    "Patience is a virtue. You have A LOT of it. 🧘",
+    "It's giving 'starting from scratch'. Fully. 🏗️",
+    "The future is bright. Very, very future. 🔭",
+    "Building something. Unclear what, but something. 🧱",
+  ],
+};
+
+function franchiseRoast(prof) {
+  const pool = FRANCHISE_ROASTS[prof.classification.label] || ["Dynasty football is a lifestyle. 🏈"];
+  return pool[prof.rosterId % pool.length];
+}
+
+const TRADE_TRASH = {
+  robbery: [ // >35%
+    "Somebody call 911. This is highway robbery. 🚨",
+    "Are you okay?? Did they threaten your pets?? 😭",
+    "The group chat is going to be LIT tonight. 🔥",
+    "This trade has been flagged by the League Justice Department. ⚖️",
+    "Commissioner check. NOW. 🚔",
+    "Buddy. BUDDY. What happened to you. 💀",
+    "Veto line starts here 👇",
+  ],
+  lopsided: [ // 20–35%
+    "Somebody's sleeping on the couch tonight. 😬",
+    "Yikes. That's a rough one. 😬",
+    "One side of this trade is very happy right now. 😏",
+    "The group chat is typing... 👀",
+    "Bold strategy. We'll see how it plays out. 🍿",
+    "Love the ambition. Question the math. 🧮",
+  ],
+  slight: [ // 10–20%
+    "Slight advantage but let's see how those picks land. 👀",
+    "Edge goes one way. Barely. 🎯",
+    "Close enough that you can argue about it for weeks. 📢",
+  ],
+  fair: [
+    "Rare sighting: an actually fair dynasty trade. 📸",
+    "Both sides can feel good about this one. 🤝",
+    "The math checks out. Respect. 🧠",
+  ],
+};
+
+function tradeTrashTalk(pct, winnerName, loserName) {
+  let pool, color;
+  if (pct > 0.35) {
+    pool = TRADE_TRASH.robbery; color = 'var(--red)';
+  } else if (pct > 0.20) {
+    pool = TRADE_TRASH.lopsided; color = 'var(--yellow)';
+  } else if (pct > 0.10) {
+    pool = TRADE_TRASH.slight; color = 'var(--muted)';
+  } else {
+    pool = TRADE_TRASH.fair; color = 'var(--green)';
+  }
+  // deterministic pick based on team names so it stays consistent
+  const seed = (winnerName + loserName).split('').reduce((s,c) => s + c.charCodeAt(0), 0);
+  return { text: pool[seed % pool.length], color };
+}
+
+function powerRankingVibe(rank, total, recentTrend) {
+  if (rank === 1) return '👑 Ruler';
+  if (rank === total) return '💀 Cooked';
+  if (rank === 2) return '😤 Chasing';
+  if (rank === total - 1) return '😬 Yikes';
+  if (recentTrend === 'hot') return '🔥 Hot';
+  if (recentTrend === 'cold') return '🥶 Cold';
+  if (rank <= Math.ceil(total * 0.33)) return '💪 Solid';
+  if (rank >= Math.floor(total * 0.67)) return '📉 Rough';
+  return '😐 Vibing';
+}
+
 // ── RENDER: FRANCHISE INTEL ───────────────────────────────────
 function renderFranchiseIntel() {
   const league = ld();
@@ -5708,6 +5833,7 @@ function renderFranchiseIntel() {
               <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
               <span style="font-size:.63rem;font-weight:700;color:${trajCfg.color}">${trajCfg.arrow} ${trajCfg.label}</span>
             </div>
+            <span style="font-size:.65rem;color:var(--muted);font-style:italic">${franchiseRoast(prof)}</span>
           </div>
         </div>
       </div>
