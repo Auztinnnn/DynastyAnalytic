@@ -2292,18 +2292,121 @@ function pickRoundColor(round) {
 
 // ── BOARD-DRIVEN ROOKIE PICK VALUATION ────────────────────────
 // Class-year sentiment profiles for future picks (no board exists yet)
+// Manual overrides for FUTURE years whose classes don't exist yet in FC/KTC.
+// Once a year becomes the current year, getClassProfile() ignores these and
+// computes live from FantasyCalc + KTC data instead.
 const ROOKIE_CLASS_PROFILES = {
-  // Strength multipliers per bucket: Early 1st = topEndStrength, Mid 1st = overallStrength, Late 1st = depthStrength
-  2025: { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 },
-  // 2026: average overall class with 1 cornerstone prospect - top picks get a premium,
-  // but depth is below average so mid/late 1sts are discounted relative to a normal year
-  2026: { topEndStrength: 1.08, depthStrength: 0.97, overallStrength: 1.00 },
-  // 2027: strong class with multiple elite prospects - all buckets elevated,
-  // top picks most so (multiple cornerstones), meaningful depth as well
   2027: { topEndStrength: 1.12, depthStrength: 1.06, overallStrength: 1.09 },
   2028: { topEndStrength: 1.05, depthStrength: 1.02, overallStrength: 1.03 },
 };
 const _RCLASS_DEFAULT = { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 };
+
+// Calibrated from dynasty rookie class history: FC values at draft time for a neutral class.
+// Slots 1-3 = "early" tier, 4-8 = "mid" tier, 9-12 = "depth" tier.
+const _CLASS_BASELINE = { top3: 6000, mid5: 3500, late4: 2200 };
+
+// Auto-compute class profile from live FC + KTC for a given year.
+// For the current year rookies are actually in FC with years_exp=0.
+// For future years, falls back to manual ROOKIE_CLASS_PROFILES overrides.
+function getClassProfile(year) {
+  const curYear = new Date().getFullYear();
+  if (parseInt(year) !== curYear) {
+    return ROOKIE_CLASS_PROFILES[parseInt(year)] || _RCLASS_DEFAULT;
+  }
+
+  const rookies = S.fcValues
+    .filter(fc => fc.player && ['QB','RB','WR','TE'].includes(fc.player.position)
+      && fc.player.years_exp === 0 && fc.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (rookies.length < 6) return _RCLASS_DEFAULT;
+
+  const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  const top3Avg  = avg(rookies.slice(0, 3).map(fc => fc.value));
+  const mid5Avg  = avg(rookies.slice(3, 8).map(fc => fc.value));
+  const late4Avg = avg(rookies.slice(8, 12).map(fc => fc.value));
+
+  let topEndStrength  = clamp(top3Avg  / _CLASS_BASELINE.top3,  0.75, 1.40);
+  let overallStrength = clamp(mid5Avg  / _CLASS_BASELINE.mid5,  0.75, 1.40);
+  let depthStrength   = clamp(late4Avg / _CLASS_BASELINE.late4, 0.75, 1.40);
+
+  // Blend in KTC market sentiment if available: if the market is pricing
+  // rookies above/below FC, shift all three multipliers slightly.
+  if (S.ktcAvailable) {
+    const ktcRookies = rookies.slice(0, 12).filter(fc => S.ktcBySleeperId[String(fc.player?.sleeperId)]);
+    if (ktcRookies.length >= 4) {
+      const divergence = avg(ktcRookies.map(fc => {
+        const ktc = S.ktcBySleeperId[String(fc.player.sleeperId)];
+        return (ktc - fc.value) / fc.value;
+      }));
+      // Small nudge: 30% weight on KTC sentiment, capped at +/-5%
+      const nudge = 1 + clamp(divergence * 0.3, -0.05, 0.05);
+      topEndStrength  *= nudge;
+      overallStrength *= nudge;
+      depthStrength   *= nudge;
+    }
+  }
+
+  return {
+    topEndStrength:  Math.round(topEndStrength  * 1000) / 1000,
+    overallStrength: Math.round(overallStrength * 1000) / 1000,
+    depthStrength:   Math.round(depthStrength   * 1000) / 1000,
+  };
+}
+
+// Auto-generate the Rookie Board banner for any year.
+// Historical years use static text; current year is computed live.
+function getClassBanner(year) {
+  if (parseInt(year) !== new Date().getFullYear()) {
+    return ROOKIE_CLASS_BANNERS[parseInt(year)] || null;
+  }
+
+  const rookies = S.fcValues
+    .filter(fc => fc.player && ['QB','RB','WR','TE'].includes(fc.player.position)
+      && fc.player.years_exp === 0 && fc.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (rookies.length < 4) return null;
+
+  const profile = getClassProfile(year);
+  const o = profile.overallStrength, t = profile.topEndStrength, d = profile.depthStrength;
+
+  let label;
+  if (t >= 1.15 && o >= 1.08) label = 'Elite';
+  else if (t >= 1.08 || o >= 1.05) label = 'Strong';
+  else if (o >= 0.97 && d >= 0.95) label = 'Average';
+  else if (t >= 1.06 && d < 0.95) label = 'Top-Heavy';
+  else label = 'Weak';
+
+  // Top names
+  const topNames = rookies.slice(0, 3).map(fc => fc.player.name).join(', ');
+
+  // Position breakdown across the first round (12 slots)
+  const posCounts = {};
+  rookies.slice(0, 12).forEach(fc => {
+    const p = fc.player.position;
+    posCounts[p] = (posCounts[p] || 0) + 1;
+  });
+  const topPos = Object.entries(posCounts).sort((a, b) => b[1] - a[1]);
+  const posNote = topPos.length ? `${topPos[0][0]}-heavy` : '';
+
+  // KTC sentiment note
+  let ktcNote = '';
+  if (S.ktcAvailable) {
+    const r12 = rookies.slice(0, 12).filter(fc => S.ktcBySleeperId[String(fc.player?.sleeperId)]);
+    if (r12.length >= 4) {
+      const bullish = r12.filter(fc => S.ktcBySleeperId[String(fc.player.sleeperId)] > fc.value * 1.12).length;
+      const bearish = r12.filter(fc => S.ktcBySleeperId[String(fc.player.sleeperId)] < fc.value * 0.88).length;
+      if (bullish >= Math.ceil(r12.length * 0.4))  ktcNote = ' · KTC market bullish';
+      else if (bearish >= Math.ceil(r12.length * 0.4)) ktcNote = ' · KTC market cautious';
+    }
+  }
+
+  const note = `${topNames} headline${posNote ? ` a ${posNote}` : ''} the class${ktcNote}`;
+  return { label, note };
+}
 
 // Cached rookie board slots (keyed by S.fcValues.length for cheap invalidation)
 let _rbCache = null, _rbCacheLen = -1;
@@ -2472,7 +2575,7 @@ function getPickContext(pickKey, league) {
   }
 
   // Future year (or current-year with empty board): class-sentiment model
-  const cp = ROOKIE_CLASS_PROFILES[parseInt(season)] || _RCLASS_DEFAULT;
+  const cp = getClassProfile(season);
   const years = Object.keys(S.fcPickValues).sort();
   let fcBase = 0;
   if (years.length) {
@@ -5812,7 +5915,7 @@ function renderRookieBoard() {
   }).join('');
 
   // Class profile banner
-  const classProfile = ROOKIE_CLASS_BANNERS[curYear];
+  const classProfile = getClassBanner(curYear);
   const classBadgeColor = { Elite: '#f59e0b', Strong: '#3fb950', Average: '#8b949e', Weak: '#f85149', Unknown: '#6b7280' }[classProfile?.label] || '#6b7280';
   const anyExactSlots = Object.keys(knownSlots).length > 0;
   const classBanner = classProfile
