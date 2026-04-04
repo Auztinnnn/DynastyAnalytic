@@ -319,13 +319,7 @@
     .trade-v2-bar { height: 6px; border-radius: 3px; overflow: hidden; display: flex; background: var(--surface2); margin-bottom: 10px; }
     .trade-v2-bar-a { background: var(--green); height: 100%; transition: width .35s ease; }
     .trade-v2-bar-b { background: var(--red); height: 100%; transition: width .35s ease; }
-    .trade-v2-sel-row { display: flex; gap: 10px; font-size: .7rem; color: var(--muted); margin-bottom: 10px; }
-    .trade-v2-sel-side { flex: 1; min-width: 0; }
-    .trade-v2-sel-label { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 3px; }
-    .trade-v2-sel-items { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .trade-v2-mve-wrap { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
-    .trade-v2-mve-toggle { font-size: .7rem; color: var(--muted); cursor: pointer; text-align: center; user-select: none; padding: 2px; margin-bottom: 8px; }
-    .trade-v2-mve-toggle:hover { color: var(--accent); }
+    .trade-v2-detail { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; }
     /* League Scouting tab */
     .scout-top-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
     .scout-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
@@ -1994,6 +1988,9 @@ async function loadSleeperPlayers() {
 
     if (currentTab === 'players') renderPlayersTab();
     if (currentTab === 'rosters') renderRosters();
+    // Re-draw trade rosters so K/DEF show correctly as soon as meta is ready
+    if (S.tradeA?.rosterId) drawRoster('A', S.tradeA.rosterId);
+    if (S.tradeB?.rosterId) drawRoster('B', S.tradeB.rosterId);
   } catch(e) { console.warn('Sleeper players fetch failed:', e); }
 }
 
@@ -3987,23 +3984,7 @@ function renderTradeCalculator() {
         <div class="trade-v2-bar-b" id="v2-bar-b" style="width:50%"></div>
       </div>
       <div id="v2-trash-talk" style="display:none;text-align:center;font-size:.72rem;font-style:italic;padding:4px 12px 2px;transition:opacity .2s"></div>
-      <div class="trade-v2-sel-row" id="v2-sel-row" style="display:none">
-        <div class="trade-v2-sel-side">
-          <div class="trade-v2-sel-label" id="v2-sel-label-a">Team A gives</div>
-          <div class="trade-v2-sel-items" id="v2-sel-a"></div>
-        </div>
-        <div style="color:var(--border)">|</div>
-        <div class="trade-v2-sel-side">
-          <div class="trade-v2-sel-label" id="v2-sel-label-b">Team B gives</div>
-          <div class="trade-v2-sel-items" id="v2-sel-b"></div>
-        </div>
-      </div>
-      <div id="v2-detail" style="display:none">
-        <div class="trade-v2-mve-wrap">
-          <div class="trade-v2-mve-toggle" onclick="toggleV2Mve()">▼ MVE Analysis</div>
-          <div id="v2-mve-body" style="display:none"></div>
-        </div>
-      </div>
+      <div id="v2-detail" class="trade-v2-detail" style="display:none"></div>
     </div>`;
   if (teams.length>=2) {
     S.tradeA={ rosterId:teams[0].rosterId, players:[], picks:[] };
@@ -4431,7 +4412,6 @@ function applyProposal(idx) {
   }
 }
 
-function toggleV2Mve(){ const b=document.getElementById('v2-mve-body'); const t=document.querySelector('.trade-v2-mve-toggle'); if(!b)return; const open=b.style.display!=='none'; b.style.display=open?'none':'block'; if(t)t.textContent=(open?'▼':'▲')+' MVE Analysis'; }
 
 function tradeContextNote(tA, tB, league) {
   const profA = mveTeamProfile(tA.rosterId, league);
@@ -4591,26 +4571,7 @@ function updateProposal() {
     else if (barAW <= 35)            barWrapEl.classList.add('trade-bar-lopsided-b');
   }
 
-  // ── Selected items summary ───────────────────────────────────
-  const selRow = document.getElementById('v2-sel-row');
-  const selAEl = document.getElementById('v2-sel-a');
-  const selBEl = document.getElementById('v2-sel-b');
-  if (selRow && selAEl && selBEl) {
-    const pickDisplayShort = key => { const p=key.split('_'); return p[0]+' '+([ '','1st','2nd','3rd','4th'][parseInt(p[1])]||`Rd${p[1]}`); };
-    const namesA = [
-      ...S.tradeA.players.map(pid=>{ const fc=S.fcBySleeperId[String(pid)]; return fc?fc.player.name.split(' ').pop():'?'; }),
-      ...S.tradeA.picks.map(pickDisplayShort)
-    ];
-    const namesB = [
-      ...S.tradeB.players.map(pid=>{ const fc=S.fcBySleeperId[String(pid)]; return fc?fc.player.name.split(' ').pop():'?'; }),
-      ...S.tradeB.picks.map(pickDisplayShort)
-    ];
-    selAEl.textContent = namesA.length ? namesA.join(', ') : 'None selected';
-    selBEl.textContent = namesB.length ? namesB.join(', ') : 'None selected';
-    selRow.style.display = 'flex';
-  }
-
-  // Market Sentiment note — always shown when KTC available, divergence warning only on contradiction
+  // ── Market Sentiment (KTC) ────────────────────────────────────
   let ktcNote = '';
   if (S.ktcAvailable && S.tradeA.players.length && S.tradeB.players.length) {
     const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
@@ -4625,10 +4586,10 @@ function updateProposal() {
     }
     const diverges = Math.sign(ktcDiff) !== Math.sign(playerValA - playerValB) && Math.abs(ktcDiff) > 500;
     const warnHtml = diverges ? `<span style="color:var(--yellow);margin-left:5px">⚡ contradicts FC</span>` : '';
-    ktcNote = `<div style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:4px">${sentText}${warnHtml}</div>`;
+    ktcNote = `<div style="font-size:.72rem;color:var(--muted)">${sentText}${warnHtml}</div>`;
   }
 
-  // ── Pick source note ─────────────────────────────────────────
+  // ── Pick source note ──────────────────────────────────────────
   const pickCount = S.tradeA.picks.length + S.tradeB.picks.length;
   const hasBucketedPicks = [...S.tradeA.picks, ...S.tradeB.picks].some(k => {
     const bkt = getPickBucketForKey(k); return bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid';
@@ -4638,8 +4599,8 @@ function updateProposal() {
         ? hasBucketedPicks ? 'FC RDP · 1st-round buckets projected from team strength' : 'FC RDP (mid estimate)'
         : 'tier defaults'}</div>` : '';
 
-  // ── MVE layered analysis ─────────────────────────────────────
-  let mveHtml = '';
+  // ── Compact MVE insights ──────────────────────────────────────
+  let insightHtml = '';
   if (S.fcValues.length > 0 && (S.tradeA.players.length || S.tradeB.players.length)) {
     function mveSide(pids) {
       return pids.reduce((acc, pid) => {
@@ -4657,76 +4618,51 @@ function updateProposal() {
     mA.neutral += pickValA; mA.contender += pickValA; mA.rebuilder += pickValA;
     mB.neutral += pickValB; mB.contender += pickValB; mB.rebuilder += pickValB;
 
-    const mveDiff = Math.abs(mA.neutral - mB.neutral);
-    const mveAvg  = (mA.neutral + mB.neutral) / 2 || 1;
-    const mvePct  = mveDiff / mveAvg;
-    let mveVClass = 'verdict-fair', mveVText = 'MVE Neutral: Approximately Even';
-    if (mvePct >= 0.08) {
-      const winner = mA.neutral > mB.neutral ? (rA?rA.teamName:'Team A') : (rB?rB.teamName:'Team B');
-      mveVClass = mA.neutral > mB.neutral ? 'verdict-a' : 'verdict-b';
-      mveVText  = `MVE Neutral: Favors ${winner} by ${mveDiff.toLocaleString()} (${(mvePct*100).toFixed(0)}%)`;
+    // Lens divergence — A receives mB's value, B receives mA's value
+    const mainAWins = vA > vB;
+    const lensItems = [];
+    const cA = mB.contender, cB = mA.contender;
+    if ((cA > cB) !== mainAWins && Math.abs(cA - cB) > 300) {
+      const who = cA > cB ? (rA?.teamName || 'Team A') : (rB?.teamName || 'Team B');
+      lensItems.push(`Win-now: <strong>${who}</strong>`);
     }
-    const avgTierA = mA.tiers.length ? mA.tiers.reduce((s,t)=>s+t,0)/mA.tiers.length : 4;
-    const avgTierB = mB.tiers.length ? mB.tiers.reduce((s,t)=>s+t,0)/mB.tiers.length : 4;
-    let tierNote = '';
-    if (mA.tiers.length && mB.tiers.length) {
-      const d = avgTierA - avgTierB;
-      if (d < -0.5) tierNote = `<span style="color:var(--green)">↑ ${rA?rA.teamName:'Team A'} consolidates up in tier</span>`;
-      else if (d > 0.5) tierNote = `<span style="color:var(--green)">↑ ${rB?rB.teamName:'Team B'} consolidates up in tier</span>`;
+    const rA2 = mB.rebuilder, rB2 = mA.rebuilder;
+    if ((rA2 > rB2) !== mainAWins && Math.abs(rA2 - rB2) > 300) {
+      const who = rA2 > rB2 ? (rA?.teamName || 'Team A') : (rB?.teamName || 'Team B');
+      lensItems.push(`Dynasty: <strong>${who}</strong>`);
     }
-    let lineupDelta = null, lineupHtml = '';
+    const lensHtml = lensItems.length
+      ? `<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">${lensItems.join(' &nbsp;·&nbsp; ')}</div>`
+      : '';
+
+    // Key Factors — call lineup delta only for explain context, don't render the full block
+    let lineupDelta = null;
     if (S.tradeA.players.length || S.tradeB.players.length) {
       lineupDelta = mveLineupDelta(S.tradeA.rosterId, S.tradeB.rosterId, S.tradeA.players, S.tradeB.players, league);
-      lineupHtml  = lineupDeltaHtml(lineupDelta, rA?rA.teamName:'Team A', rB?rB.teamName:'Team B');
     }
     const tradeReasons = mveExplainTrade(S.tradeA, S.tradeB, mA, mB, lineupDelta, league);
     const explainHtml = tradeReasons.length
-      ? `<div style="margin-top:10px"><div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Key Factors</div>
-         <div class="explain-chips">${tradeReasons.map(r=>`<span class="explain-chip">· ${r}</span>`).join('')}</div></div>`
+      ? `<div class="explain-chips" style="margin-bottom:4px">${tradeReasons.map(r=>`<span class="explain-chip">· ${r}</span>`).join('')}</div>`
       : '';
-    mveHtml = `
-      <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">MVE Analysis — Layered Valuation</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        <div style="background:var(--surface2);border-radius:6px;padding:8px">
-          <div style="font-size:.68rem;color:var(--muted);margin-bottom:5px">${rA?rA.teamName:'Team A'} <em>receives</em></div>
-          <div style="font-size:.82rem;color:var(--text);font-weight:600">Neutral: ${mB.neutral.toLocaleString()}</div>
-          <div style="font-size:.72rem;color:var(--green);margin-top:2px">Contender: ${mB.contender.toLocaleString()}</div>
-          <div style="font-size:.72rem;color:#a371f7">Rebuilder: ${mB.rebuilder.toLocaleString()}</div>
-          ${mA.tiers.length ? `<div style="font-size:.68rem;color:var(--muted);margin-top:4px">Giving avg T${avgTierA.toFixed(1)}</div>` : ''}
-        </div>
-        <div style="background:var(--surface2);border-radius:6px;padding:8px">
-          <div style="font-size:.68rem;color:var(--muted);margin-bottom:5px">${rB?rB.teamName:'Team B'} <em>receives</em></div>
-          <div style="font-size:.82rem;color:var(--text);font-weight:600">Neutral: ${mA.neutral.toLocaleString()}</div>
-          <div style="font-size:.72rem;color:var(--green);margin-top:2px">Contender: ${mA.contender.toLocaleString()}</div>
-          <div style="font-size:.72rem;color:#a371f7">Rebuilder: ${mA.rebuilder.toLocaleString()}</div>
-          ${mB.tiers.length ? `<div style="font-size:.68rem;color:var(--muted);margin-top:4px">Giving avg T${avgTierB.toFixed(1)}</div>` : ''}
-        </div>
-      </div>
-      <div class="trade-verdict ${mveVClass}" style="font-size:.8rem">${mveVText}</div>
-      ${tierNote ? `<div style="font-size:.72rem;text-align:center;margin-top:6px">${tierNote}</div>` : ''}
-      ${explainHtml}${lineupHtml}`;
+
+    insightHtml = lensHtml + explainHtml;
   }
 
-  const detEl = document.getElementById('v2-detail');
-  const mveBodyEl = document.getElementById('v2-mve-body');
-
-  // Classification-driven trade context notes (P5)
+  // ── Context advisory notes ─────────────────────────────────────
   const ctxNotes = S.fcValues.length > 0 ? tradeContextNote(S.tradeA, S.tradeB, league) : [];
   const ctxHtml = ctxNotes.map(note =>
-    `<div style="font-size:.73rem;color:var(--yellow);margin-top:6px;padding:6px 10px;background:rgba(210,153,34,.08);border-radius:6px;border-left:2px solid var(--yellow)">${note}</div>`
+    `<div style="font-size:.73rem;color:var(--yellow);margin-top:5px;padding:5px 8px;background:rgba(210,153,34,.08);border-radius:6px;border-left:2px solid var(--yellow)">${note}</div>`
   ).join('');
 
-  if (detEl) detEl.style.display = (ktcNote || pickSrcNote || mveHtml || ctxHtml) ? 'block' : 'none';
-  if (mveBodyEl) mveBodyEl.innerHTML = mveHtml;
-  // Update the notes outside mve body (ktc, pick source, context advisory)
-  const existingNotes = document.getElementById('v2-notes');
-  if (!existingNotes && detEl && (ktcNote || pickSrcNote || ctxHtml)) {
-    const notesDiv = document.createElement('div');
-    notesDiv.id = 'v2-notes';
-    notesDiv.innerHTML = ktcNote + pickSrcNote + ctxHtml;
-    detEl.insertBefore(notesDiv, detEl.firstChild);
-  } else if (existingNotes) {
-    existingNotes.innerHTML = ktcNote + pickSrcNote + ctxHtml;
+  // ── Inject into detail panel ───────────────────────────────────
+  const detEl = document.getElementById('v2-detail');
+  if (detEl) {
+    const noteBlock = ktcNote || pickSrcNote || ctxHtml
+      ? `<div style="margin-top:${insightHtml ? '8px' : '0'}">${ktcNote}${pickSrcNote}${ctxHtml}</div>`
+      : '';
+    const hasContent = insightHtml || noteBlock;
+    detEl.style.display = hasContent ? 'block' : 'none';
+    detEl.innerHTML = hasContent ? insightHtml + noteBlock : '';
   }
 }
 
