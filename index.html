@@ -1439,6 +1439,98 @@
       border-color: rgba(74,158,255,.5);
       animation: comparisonPulse .7s cubic-bezier(.22,1,.36,1) forwards;
     }
+
+    /* ══════════════════════════════════════════════════════════
+       PREMIUM UI LAYER — player cards, trade bar, rankings
+    ══════════════════════════════════════════════════════════ */
+
+    /* ── Weekly theme hook (injectable, no logic) ─────────── */
+    :root {
+      --weekly-gradient: none;
+      --weekly-accent:   var(--accent);
+    }
+    /* .theme-weekly overrides go here */
+
+    /* ── Player card: hover lift + refined transition ─────── */
+    .player-card {
+      position: relative;
+      transition: transform .14s cubic-bezier(.22,1,.36,1),
+                  box-shadow .15s,
+                  border-color .15s,
+                  opacity .1s;
+    }
+    .player-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,.35);
+      border-color: rgba(74,158,255,.4);
+    }
+    .player-card:active { transform: scale(.985); opacity: .88; }
+
+    /* ── Tier-based card styles ───────────────────────────── */
+    .tier-1 {
+      background: linear-gradient(180deg, #1d2640 0%, #111827 100%);
+      border-color: rgba(232,182,58,.22);
+    }
+    .tier-1::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--gold); border-radius: 10px 0 0 10px;
+    }
+    .tier-2 { border-color: rgba(74,158,255,.2); }
+    /* tier-3 = default, no override */
+    .tier-4 { opacity: .85; }
+    .tier-5 { opacity: .78; }
+
+    /* ── Overlay modifier classes ─────────────────────────── */
+    /* ov-cornerstone: gold strip (same as tier-1 but gold always) */
+    .ov-cornerstone::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--gold); border-radius: 10px 0 0 10px;
+    }
+    /* ov-rising: faint green left-edge brightness nudge */
+    .ov-rising {
+      box-shadow: inset 2px 0 0 rgba(63,185,80,.35);
+    }
+    /* ov-falling: very faint red tint */
+    .ov-falling {
+      background: linear-gradient(180deg,
+        rgba(248,81,73,.04) 0%,
+        transparent 55%),
+        linear-gradient(180deg, #192338 0%, #111827 100%);
+    }
+    /* ov-speculative: purple-tinted border */
+    .ov-speculative { border-color: rgba(163,113,247,.25); }
+    /* ov-aging: desaturation */
+    .ov-aging { filter: saturate(.7); }
+
+    /* ── Dynasty row: two-line layout ────────────────────── */
+    .dynasty-line1 { display:flex; align-items:center; gap:5px; margin-top:5px; flex-wrap:wrap; }
+    .dynasty-line2 { font-size:.63rem; margin-top:3px; font-weight:600; }
+
+    /* ── Trade v2 bar: snappier transition + midpoint marker ─ */
+    .trade-v2-bar { position: relative; overflow: hidden; }
+    .trade-v2-bar-a { transition: width .2s cubic-bezier(0.4,0,0.2,1); }
+    .trade-v2-bar-b { transition: width .2s cubic-bezier(0.4,0,0.2,1); }
+    /* Midpoint marker — 1px vertical at 50% */
+    .trade-v2-bar::before {
+      content: ''; position: absolute; left: 50%; top: 0; bottom: 0;
+      width: 1px; background: rgba(255,255,255,.28); z-index: 2;
+      transform: translateX(-50%);
+    }
+    /* Fair trade: midpoint pulses green */
+    .trade-bar-fair .trade-v2-bar::before {
+      background: var(--green);
+      animation: barFairPulse .45s ease forwards;
+    }
+    /* Lopsided: dominant side turns yellow */
+    .trade-bar-lopsided-a .trade-v2-bar-a { background: var(--yellow); }
+    .trade-bar-lopsided-b .trade-v2-bar-b { background: var(--yellow); }
+    @keyframes barFairPulse {
+      0%   { box-shadow: 0 0 0    rgba(63,185,80,0); }
+      50%  { box-shadow: 0 0 10px rgba(63,185,80,.7); }
+      100% { box-shadow: 0 0 6px  rgba(63,185,80,.5); }
+    }
   </style>
 </head>
 <body>
@@ -3163,7 +3255,8 @@ function renderPowerRankings() {
     const rfW=rfMax>0?(r.recentPts/rfMax*100).toFixed(1):'0';
     const recentTrend = r.recentPts > rfAvg * 1.12 ? 'hot' : r.recentPts < rfAvg * 0.88 ? 'cold' : 'mid';
     const vibe = powerRankingVibe(i+1, total, recentTrend, cls.label);
-    html+=`<tr><td>${badge(i+1)}</td><td class="bold">${r.teamName}<br><span style="font-size:.62rem;color:var(--muted);font-weight:400;font-style:italic">${vibe}</span></td><td>${tb}</td>`;
+    const rowBorder = i===0 ? 'border-left:3px solid var(--gold)' : i===1 ? 'border-left:3px solid #c0c0c0' : i===2 ? 'border-left:3px solid #cd7f32' : '';
+    html+=`<tr style="${rowBorder}"><td>${badge(i+1)}</td><td class="bold">${r.teamName}<br><span style="font-size:.62rem;color:var(--muted);font-weight:400;font-style:italic">${vibe}</span></td><td>${tb}</td>`;
     if (hasFC) html+=`<td class="td-r" style="color:var(--text)">${r.posTotals.total.toLocaleString()}</td><td class="td-r">${rankPill(r.posRanks.QB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.RB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.WR||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.TE||'-',total)}</td>`;
     html+=`<td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmtP(r.recentPts)}</div><div class="bar-bg"><div class="bar-fill" style="width:${rfW}%;background:var(--green)"></div></div></div></td><td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmt(r.powerScore)}</div><div class="bar-bg"><div class="bar-fill" style="width:${r.powerScore.toFixed(1)}%;background:var(--purple)"></div></div></div></td></tr>`;
   });
@@ -3512,16 +3605,24 @@ async function loadPlayersWeek(week) {
     const mvReasons = mv ? mveExplainPlayer(mv, league) : [];
     const weeklySig = mv && S.ktcAvailable ? mveWeeklySignal(mv, league) : null;
     const dynastyRow = mv ? `
-      <div style="display:flex;align-items:center;gap:5px;margin-top:5px;overflow:hidden">
+      <div class="dynasty-line1">
         <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}">${mv.actionTag}</span>
         <span style="font-size:.65rem;color:var(--muted);background:var(--surface2);border-radius:3px;padding:1px 5px;flex-shrink:0">T${mv.tier}</span>
         <span style="font-size:.68rem;color:var(--accent);flex-shrink:0" title="MVE-adjusted value (FC base: ${mv.fcValue.toLocaleString()})">${mv.neutral.toLocaleString()}</span>
-        <span style="font-size:.6rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mv.roleLabel}</span>
       </div>
-      ${weeklySig ? `<div style="font-size:.62rem;color:${weeklySig.color};margin-top:2px;font-style:italic">${weeklySig.label}</div>` : ''}
+      ${weeklySig ? `<div class="dynasty-line2" style="color:${weeklySig.color}">${weeklySig.label}</div>` : ''}
       ${mvReasons.length ? `<div class="explain-chips" style="margin-top:3px">${mvReasons.slice(0,3).map(r=>`<span class="explain-chip">${r}</span>`).join('')}</div>` : ''}` : '';
 
-    return `<div class="player-card">
+    const tierClass = mv ? `tier-${mv.tier}` : '';
+    const ovClasses = mv ? [
+      mv.actionTag === 'Cornerstone'                             ? 'ov-cornerstone' : '',
+      mv.actionTag === 'Speculative'                             ? 'ov-speculative' : '',
+      mv.actionTag === 'Sell' && parseInt(meta.age || 0) >= 30  ? 'ov-aging'       : '',
+      weeklySig && (weeklySig.signal==='rising'||weeklySig.signal==='buy-window')   ? 'ov-rising'  : '',
+      weeklySig && (weeklySig.signal==='sell-window'||weeklySig.signal==='sell-late') ? 'ov-falling' : '',
+    ].filter(Boolean).join(' ') : '';
+
+    return `<div class="player-card ${tierClass} ${ovClasses}">
       <div class="player-card-img">${hsLg(pid, pos)}</div>
       <div class="player-card-body">
         <div class="player-card-meta">
@@ -4462,6 +4563,15 @@ function updateProposal() {
   const barAW = Math.round(vB / total * 100);
   if (barAEl) barAEl.style.width = barAW + '%';
   if (barBEl) barBEl.style.width = (100 - barAW) + '%';
+
+  // Fair/lopsided bar state classes
+  const barWrapEl = barAEl ? barAEl.closest('.trade-v2-footer') : null;
+  if (barWrapEl) {
+    barWrapEl.classList.remove('trade-bar-fair','trade-bar-lopsided-a','trade-bar-lopsided-b');
+    if (Math.abs(barAW - 50) <= 5)  barWrapEl.classList.add('trade-bar-fair');
+    else if (barAW >= 65)            barWrapEl.classList.add('trade-bar-lopsided-a');
+    else if (barAW <= 35)            barWrapEl.classList.add('trade-bar-lopsided-b');
+  }
 
   // ── Selected items summary ───────────────────────────────────
   const selRow = document.getElementById('v2-sel-row');
