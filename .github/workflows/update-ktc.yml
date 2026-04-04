@@ -30,54 +30,163 @@ jobs:
           const { chromium } = require('playwright');
           const fs = require('fs');
 
+          // Pull an array of player objects out of whatever shape KTC returns.
+          // Accepts: bare array, { players: [...] }, or Next.js __NEXT_DATA__ blobs.
+          function extractPlayers(obj) {
+            if (!obj) return null;
+
+            // Bare array
+            if (Array.isArray(obj) && obj.length > 50) return obj;
+
+            // { players: [...] }
+            if (obj.players && Array.isArray(obj.players) && obj.players.length > 50)
+              return obj.players;
+
+            // Next.js page props: walk common paths
+            const pageProps = obj?.props?.pageProps;
+            if (pageProps) {
+              for (const key of Object.keys(pageProps)) {
+                if (Array.isArray(pageProps[key]) && pageProps[key].length > 50)
+                  return pageProps[key];
+              }
+            }
+
+            // Deep-search: find any array of 50+ objects that looks like players
+            function deepFind(node, depth) {
+              if (depth > 6 || !node || typeof node !== 'object') return null;
+              if (Array.isArray(node) && node.length > 50 && typeof node[0] === 'object')
+                return node;
+              for (const val of Object.values(node)) {
+                const found = deepFind(val, depth + 1);
+                if (found) return found;
+              }
+              return null;
+            }
+            return deepFind(obj, 0);
+          }
+
+          // Normalise a player object to { sleeperId, playerName, value }
+          // KTC field names vary; we accept several known aliases.
+          function normalise(raw) {
+            return raw.map(p => ({
+              sleeperId:  p.sleeperId  ?? p.sleeper_id ?? p.sleeperID ?? null,
+              playerName: p.playerName ?? p.name       ?? p.player    ?? '',
+              value:      p.value      ?? p.sf_value   ?? p.ktcValue  ?? 0,
+              // pass through everything else so the frontend can use original fields
+              ...p,
+            }));
+          }
+
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const context = await browser.newContext({
               userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               locale: 'en-US',
+              extraHTTPHeaders: {
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              },
             });
             const page = await context.newPage();
 
-            let captured = null;
+            let xhrCaptured = null;
 
-            // Intercept any response that looks like the player array
+            // Log every KTC JSON response for diagnostics, capture player arrays
             page.on('response', async response => {
               const url = response.url();
-              if (captured) return;
               if (!url.includes('keeptradecut.com')) return;
               const ct = response.headers()['content-type'] || '';
               if (!ct.includes('json')) return;
               try {
                 const body = await response.json();
-                if (Array.isArray(body) && body.length > 50 && body[0].sleeperId !== undefined) {
-                  captured = body;
-                  console.log(`Captured ${body.length} players from ${url}`);
+                console.log(`[xhr] ${url} → type=${Array.isArray(body)?'array':'object'} len=${Array.isArray(body)?body.length:Object.keys(body).length}`);
+                if (!xhrCaptured) {
+                  const players = extractPlayers(body);
+                  if (players && players.length > 50) {
+                    xhrCaptured = players;
+                    console.log(`[xhr] Captured ${players.length} players from ${url}`);
+                  }
                 }
               } catch (_) {}
             });
 
-            console.log('Loading KTC rankings page...');
+            console.log('Loading KTC dynasty rankings page...');
             await page.goto('https://keeptradecut.com/dynasty-rankings', {
               waitUntil: 'networkidle',
               timeout: 45000,
             });
 
+            // ── Method 1: XHR intercept (already done above) ──────────
+
+            // ── Method 2: __NEXT_DATA__ embedded in page HTML ─────────
+            let nextDataCaptured = null;
+            if (!xhrCaptured) {
+              console.log('XHR intercept found nothing — trying __NEXT_DATA__...');
+              try {
+                const raw = await page.$eval(
+                  '#__NEXT_DATA__',
+                  el => el.textContent
+                );
+                const json = JSON.parse(raw);
+                const players = extractPlayers(json);
+                if (players && players.length > 50) {
+                  nextDataCaptured = players;
+                  console.log(`[next_data] Captured ${players.length} players`);
+                } else {
+                  console.log('[next_data] Found __NEXT_DATA__ but no player array — keys:', Object.keys(json).join(', '));
+                }
+              } catch (e) {
+                console.log('[next_data] Not found or parse error:', e.message);
+              }
+            }
+
+            // ── Method 3: window.__INITIAL_STATE__ or similar globals ─
+            let globalCaptured = null;
+            const captured = xhrCaptured || nextDataCaptured;
+            if (!captured) {
+              console.log('Trying window globals...');
+              try {
+                const globals = await page.evaluate(() => {
+                  const candidates = ['__INITIAL_STATE__', '__REDUX_STATE__', '__APP_DATA__', 'playerValues', 'rankingData'];
+                  const out = {};
+                  for (const k of candidates) {
+                    if (window[k]) out[k] = window[k];
+                  }
+                  return out;
+                });
+                for (const [key, val] of Object.entries(globals)) {
+                  const players = extractPlayers(val);
+                  if (players && players.length > 50) {
+                    globalCaptured = players;
+                    console.log(`[global:${key}] Captured ${players.length} players`);
+                    break;
+                  }
+                }
+              } catch (e) {
+                console.log('[globals] Error:', e.message);
+              }
+            }
+
             await browser.close();
 
-            if (!captured || captured.length < 50) {
-              console.error('No valid KTC player array captured — aborting');
+            const final = xhrCaptured || nextDataCaptured || globalCaptured;
+
+            if (!final || final.length < 50) {
+              console.error('All capture methods failed — cannot write snapshot.');
+              console.error('Check the [xhr] log lines above for clues about the actual response shape.');
               process.exit(1);
             }
 
+            const normalised = normalise(final);
             const snapshot = {
               source: 'ktc-snapshot',
               fetchedAt: new Date().toISOString(),
-              playerCount: captured.length,
-              data: captured,
+              playerCount: normalised.length,
+              data: normalised,
             };
 
             fs.writeFileSync('ktc-latest.json', JSON.stringify(snapshot));
-            console.log(`Wrote ktc-latest.json: ${captured.length} players`);
+            console.log(`Wrote ktc-latest.json: ${normalised.length} players`);
           })();
           EOF
 
