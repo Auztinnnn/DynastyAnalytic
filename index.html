@@ -1648,10 +1648,12 @@
     <div class="sub-tabs">
       <button class="sub-tab active" data-sub="wrapped" onclick="switchSubTab('history','wrapped')">Season Wrapped</button>
       <button class="sub-tab" data-sub="draft" onclick="switchSubTab('history','draft')">Draft History</button>
+      <button class="sub-tab" data-sub="draftgrades" onclick="switchSubTab('history','draftgrades')">Draft Grades</button>
       <button class="sub-tab" data-sub="playoffs" onclick="switchSubTab('history','playoffs')">🏆 Playoffs</button>
     </div>
     <div id="sub-history-wrapped" class="sub-panel active"><div id="wrapped-content"></div></div>
     <div id="sub-history-draft" class="sub-panel"><div id="draft-history-content"></div></div>
+    <div id="sub-history-draftgrades" class="sub-panel"><div id="draft-grades-content"></div></div>
     <div id="sub-history-playoffs" class="sub-panel"><div id="playoffs-content"></div></div>
   </div>
 </main>
@@ -2183,7 +2185,6 @@ const ROOKIE_CLASS_BANNERS = {
   2023: { label: 'Weak',    note: 'Shallow class; QB-heavy, limited elite skill talent' },
   2024: { label: 'Strong',  note: 'Deep TE/WR class; Nabers, Odunze, Bowers headlined' },
   2025: { label: 'Average', note: 'Balanced across positions; several boom/bust prospects' },
-  2026: { label: 'Unknown', note: 'Pre-draft — class strength TBD' },
 };
 function getPickValue(season, round, bucket) {
   const pv = S.fcPickValues[String(season)];
@@ -8359,6 +8360,211 @@ function renderDraftHistory() {
     </div>`;
 }
 
+// ── RENDER: DRAFT GRADES ─────────────────────────────────────
+// Leaderboard + Classes views across all historical drafts.
+// Value+ = sum of (currentValue - expectedAtSlot) / 100 for graded picks.
+let _dgView = 'rankings';
+let _dgSeason = 'all';
+
+function renderDraftGrades() {
+  const el = document.getElementById('draft-grades-content');
+  if (!el) return;
+  if (!S.currentLeagueId) { el.innerHTML = '<p style="color:var(--muted);padding:40px;text-align:center">Load a league first.</p>'; return; }
+
+  if (!draftHistoryLoaded) {
+    el.innerHTML = '<div style="text-align:center;padding:60px"><div class="spinner"></div><p style="color:var(--muted);margin-top:12px">Loading draft history...</p></div>';
+    ensureDraftHistory().then(() => renderDraftGrades());
+    return;
+  }
+
+  const allSeasons = Object.keys(S.draftHistory).sort((a, b) => parseInt(S.draftHistory[b].season) - parseInt(S.draftHistory[a].season));
+  if (!allSeasons.length) {
+    el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:40px">No completed drafts found.</p>';
+    return;
+  }
+
+  const currentLd = S.leagues[S.currentLeagueId];
+
+  function ownerName(ownerId, rosterMap) {
+    if (currentLd) {
+      const cur = Object.values(currentLd.rosterMap).find(r => r.ownerId === ownerId);
+      if (cur) return cur.teamName;
+    }
+    const rm = Object.values(rosterMap).find(r => r.ownerId === ownerId);
+    return rm ? (rm.teamName || 'Unknown') : 'Unknown';
+  }
+
+  function ownerAvatar(ownerId) {
+    const r = Object.values(currentLd?.rosterMap || {}).find(r => r.ownerId === ownerId);
+    return r?.avatar ? `<img src="https://sleepercdn.com/avatars/thumbs/${r.avatar}" onerror="this.style.display='none'" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0">` : '';
+  }
+
+  function gradePick(p, totalPicks) {
+    const pickNo   = p.pick_no || 1;
+    const pct      = (pickNo - 1) / Math.max(totalPicks - 1, 1);
+    const expected = Math.max(400, Math.round(6800 * Math.exp(-2.5 * pct)));
+    const fc       = S.fcBySleeperId[String(p.player_id)];
+    const value    = fc ? fc.value : 0;
+    if (!value) return null;
+    const surplus = (value - expected) / 100;
+    const name = p.metadata?.name || (p.metadata?.first_name ? `${p.metadata.first_name} ${p.metadata.last_name}` : `Player ${p.player_id}`);
+    return { surplus, isHit: value >= expected * 1.5, isBust: value < expected * 0.4, value, expected, name, pickNo, player_id: p.player_id, position: p.metadata?.position || '?' };
+  }
+
+  const seasonKeys = _dgSeason === 'all' ? allSeasons : [_dgSeason];
+  const ownerStats = {};
+
+  for (const lgKey of seasonKeys) {
+    const dhData = S.draftHistory[lgKey];
+    if (!dhData) continue;
+    const { picks, rosterMap } = dhData;
+    for (const p of picks) {
+      const rm  = rosterMap[p.roster_id] || {};
+      const oid = rm.ownerId || String(p.roster_id);
+      const gp  = gradePick(p, picks.length);
+      if (!gp) continue;
+      if (!ownerStats[oid]) ownerStats[oid] = { oid, name: ownerName(oid, rosterMap), picks: 0, surplus: 0, hits: 0, busts: 0, topPicks: [] };
+      const st = ownerStats[oid];
+      st.picks++; st.surplus += gp.surplus;
+      if (gp.isHit)  st.hits++;
+      if (gp.isBust) st.busts++;
+      st.topPicks.push({ ...gp, season: dhData.season });
+    }
+  }
+
+  const seasonStats = {};
+  for (const lgKey of allSeasons) {
+    const dhData = S.draftHistory[lgKey];
+    if (!dhData) continue;
+    const { picks, rosterMap } = dhData;
+    const mgrs = {};
+    for (const p of picks) {
+      const rm  = rosterMap[p.roster_id] || {};
+      const oid = rm.ownerId || String(p.roster_id);
+      const gp  = gradePick(p, picks.length);
+      if (!gp) continue;
+      if (!mgrs[oid]) mgrs[oid] = { oid, name: ownerName(oid, rosterMap), picks: 0, surplus: 0, hits: 0, busts: 0, topPicks: [] };
+      const m = mgrs[oid];
+      m.picks++; m.surplus += gp.surplus;
+      if (gp.isHit)  m.hits++;
+      if (gp.isBust) m.busts++;
+      m.topPicks.push(gp);
+    }
+    seasonStats[lgKey] = { season: dhData.season, managers: Object.values(mgrs).filter(m => m.picks > 0).sort((a, b) => b.surplus - a.surplus) };
+  }
+
+  const gradeColors = { 'A+': '#3fb950', A: 'var(--green)', B: '#58a6ff', C: 'var(--yellow)', D: 'var(--orange)', F: 'var(--red)' };
+  function letterGrade(rank, total) {
+    const p = total > 1 ? rank / (total - 1) : 0;
+    if (p < 0.10) return 'A+';
+    if (p < 0.30) return 'A';
+    if (p < 0.55) return 'B';
+    if (p < 0.75) return 'C';
+    if (p < 0.90) return 'D';
+    return 'F';
+  }
+
+  const ctrl = `style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:.8rem"`;
+  const seasonOpts = ['<option value="all">All-Time</option>', ...allSeasons.map(k => `<option value="${k}" ${k===_dgSeason?'selected':''}>${S.draftHistory[k].season} Season</option>`)].join('');
+
+  function rankingsHtml() {
+    const ranked = Object.values(ownerStats).sort((a, b) => b.surplus - a.surplus);
+    const n = ranked.length;
+    const thS = `style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;font-weight:600;white-space:nowrap"`;
+    const rows = ranked.map((st, i) => {
+      const lg  = letterGrade(i, n);
+      const gc  = gradeColors[lg] || 'var(--muted)';
+      const avg = st.picks ? st.surplus / st.picks : 0;
+      const hitPct  = st.picks ? Math.round(st.hits  / st.picks * 100) : 0;
+      const bustPct = st.picks ? Math.round(st.busts / st.picks * 100) : 0;
+      const sc  = st.surplus >= 0 ? 'var(--green)' : 'var(--red)';
+      const ac  = avg        >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 12px;color:var(--muted);font-size:.75rem">${i+1}</td>
+        <td style="padding:10px 8px"><div style="display:flex;align-items:center;gap:8px">${ownerAvatar(st.oid)}<span style="font-weight:600;color:var(--text)">${st.name}</span></div></td>
+        <td style="padding:10px 12px;font-size:.92rem;font-weight:800;color:${gc}">${lg}</td>
+        <td style="padding:10px 12px;font-size:.82rem;font-weight:700;color:${sc}">${st.surplus>=0?'+':''}${st.surplus.toFixed(1)}</td>
+        <td style="padding:10px 12px;font-size:.82rem;color:var(--text)">${hitPct}%</td>
+        <td style="padding:10px 12px;font-size:.82rem;color:${ac}">${avg>=0?'+':''}${avg.toFixed(1)}</td>
+        <td style="padding:10px 12px;font-size:.82rem;color:${bustPct>=30?'var(--red)':'var(--muted)'}">${bustPct}%</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--border);background:var(--surface2)">
+            <th ${thS}>#</th><th ${thS}>Manager</th><th ${thS}>Grade</th>
+            <th ${thS}>Value+ ${tip('Total surplus: (current dynasty value - expected value at pick slot) / 100, summed across all graded picks')}</th>
+            <th ${thS}>Hit% ${tip('% of picks that hit (current value >= 150% of expected at slot)')}  </th>
+            <th ${thS}>Avg/Pick ${tip('Average surplus per graded pick')}</th>
+            <th ${thS}>Bust% ${tip('% of picks that busted (current value < 40% of expected at slot)')}</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">No graded picks found</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="font-size:.65rem;color:var(--muted);margin-top:8px">Value+ = how much better/worse picks performed vs. average for that draft slot. Hit = value &gt;= 150% of expected; Bust = value &lt; 40% of expected.</div>`;
+  }
+
+  function classesHtml() {
+    const allSeasonRows = Object.entries(seasonStats).sort((a, b) => parseInt(S.draftHistory[b[0]].season) - parseInt(S.draftHistory[a[0]].season));
+    const medals = ['#f59e0b','#9ca3af','#cd7f32'];
+    const top3 = allSeasonRows.flatMap(([lgKey, sd]) => sd.managers.map(m => ({ ...m, season: sd.season }))).sort((a, b) => (b.picks ? b.surplus/b.picks : 0) - (a.picks ? a.surplus/a.picks : 0)).slice(0, 3);
+    const podium = top3.map((m, i) => {
+      const avg = m.picks ? m.surplus / m.picks : 0;
+      const topBadges = [...m.topPicks].sort((a,b)=>b.surplus-a.surplus).slice(0,3).map(pk =>
+        `<span style="font-size:.68rem;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 7px;white-space:nowrap;color:var(--text)">${pk.name} <span style="color:var(--green)">(+${pk.surplus.toFixed(1)})</span></span>`
+      ).join('');
+      return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;flex:1;min-width:220px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:1.1rem">${['&#x1F947;','&#x1F948;','&#x1F949;'][i]}</span>
+          <span style="font-weight:700;color:var(--text)">${m.name}</span>
+          <span style="font-size:.65rem;color:var(--muted);margin-left:auto">${m.season}</span>
+        </div>
+        <div style="font-size:1.1rem;font-weight:800;color:var(--green);margin-bottom:6px">Avg +${avg.toFixed(1)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">${topBadges}</div>
+      </div>`;
+    }).join('');
+    const thS = `style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;font-weight:600"`;
+    const rows = allSeasonRows.flatMap(([lgKey, sd]) => sd.managers.map((m, i) => {
+      const avg = m.picks ? m.surplus / m.picks : 0;
+      const hitPct  = m.picks ? Math.round(m.hits  / m.picks * 100) : 0;
+      const bustPct = m.picks ? Math.round(m.busts / m.picks * 100) : 0;
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:9px 12px;color:var(--muted);font-size:.75rem">${i+1}</td>
+        <td style="padding:9px 8px"><div style="display:flex;align-items:center;gap:8px">${ownerAvatar(m.oid)}<span style="font-weight:600;color:var(--text)">${m.name}</span></div></td>
+        <td style="padding:9px 12px;color:var(--muted);font-size:.8rem">${sd.season}</td>
+        <td style="padding:9px 12px;color:var(--muted);font-size:.8rem">${m.picks}</td>
+        <td style="padding:9px 12px;font-weight:700;font-size:.82rem;color:${avg>=0?'var(--green)':'var(--red)'}">${avg>=0?'+':''}${avg.toFixed(1)}</td>
+        <td style="padding:9px 12px;font-size:.82rem;color:var(--text)">${hitPct}%</td>
+        <td style="padding:9px 12px;font-size:.82rem;color:${bustPct>=30?'var(--red)':'var(--muted)'}">${bustPct}%</td>
+      </tr>`;
+    })).join('');
+    return `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">${podium}</div>
+      <div class="section-title" style="margin-bottom:10px">Best Draft Classes Ever</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--border);background:var(--surface2)">
+            <th ${thS}>#</th><th ${thS}>Manager</th><th ${thS}>Season</th><th ${thS}>Picks</th><th ${thS}>Avg Surplus</th><th ${thS}>Hit%</th><th ${thS}>Bust%</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">No data</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  }
+
+  const tabBtn = (id, label) => {
+    const active = _dgView === id;
+    return `<button onclick="_dgView='${id}';renderDraftGrades()" style="padding:6px 16px;border-radius:6px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(88,166,255,.15)':'var(--surface2)'};color:${active?'var(--accent)':'var(--muted)'};font-size:.8rem;cursor:pointer;font-weight:${active?700:400}">${label}</button>`;
+  };
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+      <div style="display:flex;gap:6px">${tabBtn('rankings','Rankings')}${tabBtn('classes','Classes')}</div>
+      <select ${ctrl} onchange="_dgSeason=this.value;renderDraftGrades()">${seasonOpts}</select>
+    </div>
+    ${_dgView === 'rankings' ? rankingsHtml() : classesHtml()}`;
+}
+
 // ── RENDER: ROSTERS ───────────────────────────────────────────
 function renderRosters() {
   const league = ld();
@@ -8625,9 +8831,10 @@ function renderForSubTab(mainTab, subId) {
   else if (k==='trade/scouting')     renderLeagueScouting();
   else if (k==='trade/proposals')    renderTradeProposalsTab();
   else if (k==='trade/rookies')      renderRookieBoard();
-  else if (k==='history/wrapped')   renderFantasyWrapped();
-  else if (k==='history/draft')     renderDraftHistory();
-  else if (k==='history/playoffs')  renderPlayoffs();
+  else if (k==='history/wrapped')      renderFantasyWrapped();
+  else if (k==='history/draft')        renderDraftHistory();
+  else if (k==='history/draftgrades')  renderDraftGrades();
+  else if (k==='history/playoffs')     renderPlayoffs();
   setTimeout(addCaptureButtons, 60);
 }
 
