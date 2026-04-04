@@ -2113,6 +2113,18 @@ function pickDisplayName(pick) {
 // bucket param ('Early'|'Mid'|'Late') selects within 1st-round early/mid/late FC values
 // Round 1 has bucket-differentiated fallbacks; other rounds are flat
 const PICK_FALLBACK = { 1: { early: 8200, mid: 5500, late: 3200 }, 2: 2200, 3: 1100, 4: 500 };
+
+// ── ROOKIE CLASS PROFILES ──────────────────────────────────────
+// Seasonal context for the Rookie Board banner. Update each year.
+// label: 'Elite'|'Strong'|'Average'|'Weak' — class-depth descriptor
+// note:  short human-readable summary of the class
+const ROOKIE_CLASS_PROFILES = {
+  2022: { label: 'Strong',  note: 'Deep WR class led by London, Wilson, St. Brown' },
+  2023: { label: 'Weak',    note: 'Shallow class; QB-heavy, limited elite skill talent' },
+  2024: { label: 'Strong',  note: 'Deep TE/WR class; Nabers, Odunze, Bowers headlined' },
+  2025: { label: 'Average', note: 'Balanced across positions; several boom/bust prospects' },
+  2026: { label: 'Unknown', note: 'Pre-draft — class strength TBD' },
+};
 function getPickValue(season, round, bucket) {
   const pv = S.fcPickValues[String(season)];
   if (pv) {
@@ -4939,9 +4951,21 @@ function renderScoutingReport(ridA, ridB) {
     return 0;
   }
 
+  // League-wide positional demand: how many teams are weak at each position
+  const leaguePosNeed = { QB: 0, RB: 0, WR: 0, TE: 0 };
+  Object.values(league.rosterMap).forEach(roster => {
+    const prof = mveTeamProfile(roster.rosterId, league);
+    if (!prof) return;
+    ['QB', 'RB', 'WR', 'TE'].forEach(pos => {
+      const arr = prof.byPos?.[pos] || [];
+      if (!arr.length || arr[0].tier >= 3) leaguePosNeed[pos]++;
+    });
+  });
+  const numTeams = Object.keys(league.rosterMap).length || 1;
+
   // Score how realistically tradeable a Team B player is.
   // Weighs: Sell Window, Age Curve, Strategic Fit, Positional Context,
-  //         Production Alignment (Team A needs), Situation Score.
+  //         Production Alignment (Team A needs), League Demand, Situation Score.
   function tradabilityScore(pid) {
     const mv = mvePlayer(pid, league);
     const fc = S.fcBySleeperId[String(pid)];
@@ -4990,6 +5014,12 @@ function renderScoutingReport(ridA, ridB) {
 
     // Production Alignment: Team A urgently needs this position
     score += posNeedA(pos) * 8;
+
+    // League-wide demand: scarce position across the league = more buyers = more tradeable
+    const leagueDemand = leaguePosNeed[pos] || 0;
+    const demandPct    = leagueDemand / numTeams;
+    if (demandPct >= 0.5)       { score += 14; reasons.push('High league demand'); }
+    else if (demandPct >= 0.33) { score +=  7; reasons.push('League demand');      }
 
     if (score < 14) return null;
     return { pid, mv, fc, score, reasons: reasons.slice(0, 2) };
@@ -5273,24 +5303,57 @@ function renderRookieBoard() {
   const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
   const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
 
-  const rows = rookies.slice(0, 32).map((fc, i) => {
-    const slot = i < 12 ? `1.${String(i+1).padStart(2,'0')}` : i < 24 ? `2.${String(i-11).padStart(2,'0')}` : `3.${String(i-23).padStart(2,'0')}`;
+  // ── Cliff edge detection ──────────────────────────────────────
+  // Find rows where the value drop to the next player is an outlier.
+  const top32 = rookies.slice(0, 32);
+  const vals  = top32.map(fc => fc.value || 0);
+  const gaps  = vals.slice(1).map((v, i) => vals[i] - v);
+  const sortedGaps = [...gaps].sort((a, b) => a - b);
+  const medGap = sortedGaps[Math.floor(sortedGaps.length / 2)] || 1;
+  // A cliff is a gap ≥ 2.5× the median and at least 300 pts
+  const cliffAfter = new Set(gaps.map((g, i) => g >= Math.max(medGap * 2.5, 300) ? i : -1).filter(i => i >= 0));
+
+  // ── Exact-slot lookup from current-year completed fantasy draft ─
+  const knownSlots = {}; // sleeperId → { label: '1.04', pickNo: 4, exact: true }
+  for (const dhData of Object.values(S.draftHistory)) {
+    if (String(dhData.season) !== String(curYear)) continue;
+    const numManagers = Object.keys(dhData.rosterMap).length || 12;
+    dhData.picks.forEach(p => {
+      if (!p.player_id) return;
+      const r    = Math.ceil(p.pick_no / numManagers);
+      const slot = ((p.pick_no - 1) % numManagers) + 1;
+      knownSlots[String(p.player_id)] = {
+        label:  `${r}.${String(slot).padStart(2, '0')}`,
+        pickNo: p.pick_no,
+        exact:  true,
+      };
+    });
+  }
+
+  const rows = top32.map((fc, i) => {
+    const pid = fc.player.sleeperId;
+    const known = knownSlots[String(pid)];
+    const estSlot = i < 12 ? `1.${String(i+1).padStart(2,'0')}` : i < 24 ? `2.${String(i-11).padStart(2,'0')}` : `3.${String(i-23).padStart(2,'0')}`;
+    const slot       = known ? known.label : estSlot;
+    const isExact    = !!known;
     const isFirstRound = i < 12;
     const slotColor = i === 0 ? '#f59e0b' : i < 4 ? '#d29922' : i < 12 ? '#8b949e' : 'var(--muted)';
-    const pid = fc.player.sleeperId;
     const mv = league ? mvePlayer(pid, league) : null;
     const ktcVal = S.ktcBySleeperId[String(pid)] || null;
     const tag = mv ? mv.actionTag : 'Speculative';
     const age = fc.player.age ? `${fc.player.age}` : '—';
-    // Demand badge: how many teams need this position
+    // Demand badge
     const demandCount = posNeedCount[fc.player.position] || 0;
     const demandBadge = demandCount >= 6
       ? `<span style="font-size:.55rem;background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.3);border-radius:3px;padding:1px 4px">High Demand</span>`
       : demandCount >= 3
       ? `<span style="font-size:.55rem;background:rgba(210,153,34,.12);color:var(--yellow);border:1px solid rgba(210,153,34,.3);border-radius:3px;padding:1px 4px">In Demand</span>`
       : '';
-    return `<tr style="${!isFirstRound ? 'opacity:.8' : ''}">
-      <td style="font-size:.7rem;font-weight:700;color:${slotColor};white-space:nowrap;padding:6px 10px">${slot}</td>
+    const slotLabel = isExact
+      ? `<span title="Exact slot from completed fantasy draft">${slot} <span style="font-size:.55rem;color:var(--green);opacity:.8">✓</span></span>`
+      : `<span title="Estimated from value rank" style="opacity:.85">${slot}</span>`;
+    const rowHtml = `<tr style="${!isFirstRound ? 'opacity:.8' : ''}${cliffAfter.has(i) ? ';border-bottom:2px solid rgba(248,81,73,.35)' : ''}">
+      <td style="font-size:.7rem;font-weight:700;color:${slotColor};white-space:nowrap;padding:6px 10px">${slotLabel}</td>
       <td style="padding:6px 4px">${hsImg(pid, 28, fc.player.position)}</td>
       <td style="padding:6px 8px">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
@@ -5304,6 +5367,11 @@ function renderRookieBoard() {
       <td style="font-size:.72rem;color:${ktcVal ? '#a371f7' : 'var(--muted)'};text-align:right;padding:6px 8px;white-space:nowrap">${ktcVal ? ktcVal.toLocaleString() : '—'}</td>
       <td style="padding:6px 8px"><span class="signal-badge ${sigCls[tag]||'signal-hold'}">${tag}</span></td>
     </tr>`;
+    // Cliff separator row inserted after this player
+    const cliffRow = cliffAfter.has(i)
+      ? `<tr><td colspan="6" style="padding:2px 10px 4px;font-size:.6rem;color:rgba(248,81,73,.7);letter-spacing:.06em;text-transform:uppercase;background:rgba(248,81,73,.04)">▼ Tier cliff · value drops ${Math.round(gaps[i]).toLocaleString()} pts</td></tr>`
+      : '';
+    return rowHtml + cliffRow;
   }).join('');
 
   // League needs summary
@@ -5313,9 +5381,22 @@ function renderRookieBoard() {
     return `<div class="scout-team-card"><div class="scout-team-name-row"><span class="scout-team-name">${t.name}</span></div><div class="scout-needs-row">${badges}</div></div>`;
   }).join('');
 
+  // Class profile banner
+  const classProfile = ROOKIE_CLASS_PROFILES[curYear];
+  const classBadgeColor = { Elite: '#f59e0b', Strong: '#3fb950', Average: '#8b949e', Weak: '#f85149', Unknown: '#6b7280' }[classProfile?.label] || '#6b7280';
+  const anyExactSlots = Object.keys(knownSlots).length > 0;
+  const classBanner = classProfile
+    ? `<div style="font-size:.72rem;margin-bottom:10px;padding:6px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:.65rem;font-weight:700;color:${classBadgeColor};border:1px solid ${classBadgeColor}44;background:${classBadgeColor}18;border-radius:3px;padding:1px 6px">${classProfile.label} Class</span>
+        <span style="color:var(--muted)">${classProfile.note}</span>
+        ${anyExactSlots ? `<span style="margin-left:auto;font-size:.62rem;color:var(--green);opacity:.8">✓ Slots from completed draft</span>` : `<span style="margin-left:auto;font-size:.62rem;color:var(--muted);opacity:.7">Slots estimated by value rank</span>`}
+      </div>`
+    : '';
+
   el.innerHTML = `
-    <div class="section-title" style="margin-bottom:6px">Rookie Board ${tip('Ranks all current-year rookies (years_exp=0) by FantasyCalc dynasty value. Pick slots are estimated by rank — 1.01 = highest-valued rookie. High Demand = 5+ teams weak at that position.')}</div>
-    ${valNote ? `<div style="font-size:.72rem;margin-bottom:14px;padding:6px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">${valNote}</div>` : ''}
+    <div class="section-title" style="margin-bottom:6px">Rookie Board ${tip('Ranks all current-year rookies (years_exp=0) by FantasyCalc dynasty value. Pick slots are estimated by value rank until the fantasy draft completes — exact slots are shown with ✓. High Demand = 5+ teams weak at that position.')}</div>
+    ${classBanner}
+    ${valNote ? `<div style="font-size:.72rem;margin-bottom:10px;padding:6px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">${valNote}</div>` : ''}
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px">
       <table style="width:100%;border-collapse:collapse">
         <thead>
