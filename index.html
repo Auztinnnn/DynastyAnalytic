@@ -5922,7 +5922,7 @@ function renderRookieBoard() {
     ? `<div style="font-size:.72rem;margin-bottom:10px;padding:6px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:.65rem;font-weight:700;color:${classBadgeColor};border:1px solid ${classBadgeColor}44;background:${classBadgeColor}18;border-radius:3px;padding:1px 6px">${classProfile.label} Class</span>
         <span style="color:var(--muted)">${classProfile.note}</span>
-        ${anyExactSlots ? `<span style="margin-left:auto;font-size:.62rem;color:var(--green);opacity:.8">✓ Slots from completed draft</span>` : `<span style="margin-left:auto;font-size:.62rem;color:var(--muted);opacity:.7">Slots estimated by value rank</span>`}
+        ${anyExactSlots ? `<span style="margin-left:auto;font-size:.62rem;color:var(--green);opacity:.8">✓ Slots from completed draft</span>` : ''}
       </div>`
     : '';
 
