@@ -2961,7 +2961,7 @@ function renderPowerRankings() {
     const rfMax=Math.max(...rankings.map(x=>x.recentPts));
     const rfW=rfMax>0?(r.recentPts/rfMax*100).toFixed(1):'0';
     const recentTrend = r.recentPts > rfAvg * 1.12 ? 'hot' : r.recentPts < rfAvg * 0.88 ? 'cold' : 'mid';
-    const vibe = powerRankingVibe(i+1, total, recentTrend);
+    const vibe = powerRankingVibe(i+1, total, recentTrend, cls.label);
     html+=`<tr><td>${badge(i+1)}</td><td class="bold">${r.teamName}<br><span style="font-size:.62rem;color:var(--muted);font-weight:400;font-style:italic">${vibe}</span></td><td>${tb}</td>`;
     if (hasFC) html+=`<td class="td-r" style="color:var(--text)">${r.posTotals.total.toLocaleString()}</td><td class="td-r">${rankPill(r.posRanks.QB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.RB||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.WR||'-',total)}</td><td class="td-r">${rankPill(r.posRanks.TE||'-',total)}</td>`;
     html+=`<td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmtP(r.recentPts)}</div><div class="bar-bg"><div class="bar-fill" style="width:${rfW}%;background:var(--green)"></div></div></div></td><td><div class="bar-wrap"><div style="font-size:.75rem;margin-bottom:3px;color:var(--text)">${fmt(r.powerScore)}</div><div class="bar-bg"><div class="bar-fill" style="width:${r.powerScore.toFixed(1)}%;background:var(--purple)"></div></div></div></td></tr>`;
@@ -4240,18 +4240,21 @@ function updateProposal() {
 
   // Arrows point toward winner; "Trade Favors" label
   const trashEl = document.getElementById('v2-trash-talk');
+  // Loser class label for smart trash talk context
+  const _loserClsA = S.fcValues.length ? (mveTeamProfile(S.tradeA.rosterId, league)?.classification?.label || '') : '';
+  const _loserClsB = S.fcValues.length ? (mveTeamProfile(S.tradeB.rosterId, league)?.classification?.label || '') : '';
   if (pct < .06) {
     if (arrowsEl) arrowsEl.textContent = '•';
     if (favLblEl) favLblEl.textContent = 'Fair Trade';
-    if (trashEl) { const tt = tradeTrashTalk(pct, '', ''); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
+    if (trashEl) { const tt = tradeTrashTalk(pct, '', '', ''); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   } else if (vB > vA) {
     if (arrowsEl) arrowsEl.innerHTML = '<span style="color:var(--green)">⟨⟨⟨</span>';
     if (favLblEl) favLblEl.textContent = 'Trade Favors';
-    if (trashEl) { const tt = tradeTrashTalk(pct, rB ? rB.teamName : 'B', rA ? rA.teamName : 'A'); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
+    if (trashEl) { const tt = tradeTrashTalk(pct, rB ? rB.teamName : 'B', rA ? rA.teamName : 'A', _loserClsA); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   } else {
     if (arrowsEl) arrowsEl.innerHTML = '<span style="color:var(--green)">⟩⟩⟩</span>';
     if (favLblEl) favLblEl.textContent = 'Trade Favors';
-    if (trashEl) { const tt = tradeTrashTalk(pct, rA ? rA.teamName : 'A', rB ? rB.teamName : 'B'); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
+    if (trashEl) { const tt = tradeTrashTalk(pct, rA ? rA.teamName : 'A', rB ? rB.teamName : 'B', _loserClsB); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   }
 
   // Bar: left (green) = what Team A receives / total; right (red) = what Team B receives / total
@@ -5614,115 +5617,201 @@ function renderRosters() {
 // FUN COMMENTARY — roasts, trash talk, vibes
 // ════════════════════════════════════════════════════════════════
 
-const FRANCHISE_ROASTS = {
-  'Contender': [
-    "The rest of the league is shaking. 👑",
-    "Built different. No notes. 🔥",
-    "Window's open. Don't blow it. 🏆",
-    "This is your year. No excuses. 💪",
-    "Top tier. Literally. 😤",
-    "Championship or we're not talking. 🥇",
+// Rotates daily so returning users see a fresh line, but it's stable within a session
+const _ROAST_DAY = Math.floor(Date.now() / 86400000);
+function _pick(arr, seed) { return arr[(seed + _ROAST_DAY) % arr.length]; }
+
+const ROAST_POOLS = {
+  contender: [
+    "Lineup looks like a problem nobody wants to solve.",
+    "This roster prints points. Simple as that.",
+    "Depth, studs, and zero excuses.",
+    "Everyone else is playing for second.",
+    "Weekly projection merchant. Respectfully.",
+    "This team doesn't rebuild. It reloads.",
+    "You're the matchup people check twice.",
+    "Built to win now. And probably later.",
+    "No weak links. That's rare.",
+    "You did this on purpose, didn't you?",
   ],
-  'Fringe': [
-    "So close yet so far. Classic. 😬",
-    "One good trade away... allegedly. 🤞",
-    "The 'almost' team. Trademarked. ™️",
-    "Right on the bubble, as always. 🫧",
-    "Dangerous enough to scare you, fragile enough to disappoint. 💀",
+  contender_old: [
+    "Window is open. Clock is ticking.",
+    "Prime years on the clock. Don't waste them.",
+    "Veterans don't wait for next year.",
+    "The window doesn't stay open forever. Make your move.",
   ],
-  'Productive Middle': [
-    "Peak mediocrity achieved. 🤷",
-    "The Switzerland of this league. ⚖️",
-    "Comfortably average and embracing it. 😌",
-    "Not last. Not first. A vibe. ✨",
-    "Locked in at 6th place. Very locked in. 🔒",
-    "The participation trophy is real. 🏅",
+  contender_young: [
+    "This might last a while.",
+    "Built for now and later. Dangerous.",
+    "Young and already scary. Not fair.",
+    "The league hasn't caught up yet. Use it.",
   ],
-  'Retool': [
-    "It's not a rebuild, it's a 'strategic reset'. 🔧",
-    "Somewhere between good and bad. Committing to neither. 😶",
-    "The squad is at a crossroads. Bring a GPS. 🗺️",
-    "Championship window: check back later. 📆",
-    "Retooling. A fancy word for 'figure it out'. 🤔",
+  fringe: [
+    "One move away. Or five.",
+    "Playoff hopeful, title unlikely.",
+    "Every week is a coin flip.",
+    "Too strong to tank, too weak to scare anyone.",
+    "Dangerous enough to scare you, fragile enough to disappoint.",
   ],
-  'Rebuild': [
-    "Trust the process. 📈 (please)",
-    "Picks, picks, everywhere picks. 🎯",
-    "This hurts now but 2026 is going to be DIFFERENT. 🌅",
-    "The glow-up is in progress. Be patient. ⏳",
-    "Tanking with dignity. Allegedly. 📉",
+  mid: [
+    "Stuck in the 'maybe next year' loop.",
+    "Good enough to compete, not enough to matter.",
+    "The definition of 6–7 wins.",
+    "Too strong to tank, too weak to scare anyone.",
+    "This roster needs a direction. Badly.",
+    "You're one move away. Or five.",
+    "Playoff hopeful, title unlikely.",
+    "Every week is a coin flip.",
+    "The most average team in the building.",
+    "This is a roster, technically.",
   ],
-  'Rebuilding': [
-    "Sir, this is a Wendy's. 🍔",
-    "Every pick is a lottery ticket. 🎟️",
-    "Patience is a virtue. You have A LOT of it. 🧘",
-    "It's giving 'starting from scratch'. Fully. 🏗️",
-    "The future is bright. Very, very future. 🔭",
-    "Building something. Unclear what, but something. 🧱",
+  retool: [
+    "It's not a rebuild, it's a 'strategic reset'.",
+    "Somewhere between good and bad. Committing to neither.",
+    "The squad is at a crossroads. Bring a GPS.",
+    "Championship window: check back later.",
+    "This roster needs a direction. Badly.",
+  ],
+  rebuild: [
+    "Future looks bright. Present does not.",
+    "You're playing the long game. Very long.",
+    "Points are optional, picks are not.",
+    "This roster is a construction site.",
+    "See you in 2027.",
+    "Trust the process. There is a process, right?",
+    "Roster value: high. Weekly points: not so much.",
+    "Hope you like rookies.",
+    "Wins are not the goal here.",
+    "Development program, not a contender.",
+  ],
+  rebuild_picks: [
+    "Draft capital merchant.",
+    "Picks everywhere. Patience required.",
+    "Future is loaded. Present is optional.",
+    "Every pick is a lottery ticket.",
+  ],
+  rebuild_nopicks: [
+    "No picks, no points. Bold strategy.",
+    "Rebuilding without capital is just losing with confidence.",
+    "The audacity to rebuild without picks.",
+    "Truly committed to doing this the hard way.",
   ],
 };
 
-function franchiseRoast(prof) {
-  const pool = FRANCHISE_ROASTS[prof.classification.label] || ["Dynasty football is a lifestyle. 🏈"];
-  return pool[prof.rosterId % pool.length];
+function franchiseRoast(prof, profiles) {
+  const cls = prof.classification.label;
+  const age = prof.weightedAge;
+  const pickVal = prof.pickValue;
+  const seed = prof.rosterId;
+  const isContender = cls === 'Contender' || cls === 'Fringe';
+  const isRebuild = cls.includes('Rebuild') || cls === 'Retool';
+
+  // Smart context variants take priority
+  if (isContender && age >= 29.5) return _pick(ROAST_POOLS.contender_old, seed);
+  if (isContender && age <= 25.5) return _pick(ROAST_POOLS.contender_young, seed);
+  if (isRebuild && pickVal < 5000) return _pick(ROAST_POOLS.rebuild_nopicks, seed);
+  if (isRebuild && pickVal > 20000) return _pick(ROAST_POOLS.rebuild_picks, seed);
+
+  // Classification pools
+  if (cls === 'Contender')         return _pick(ROAST_POOLS.contender, seed);
+  if (cls === 'Fringe')            return _pick(ROAST_POOLS.fringe, seed);
+  if (cls === 'Productive Middle') return _pick(ROAST_POOLS.mid, seed);
+  if (cls === 'Retool')            return _pick(ROAST_POOLS.retool, seed);
+  return _pick(ROAST_POOLS.rebuild, seed);
 }
 
 const TRADE_TRASH = {
-  robbery: [ // >35%
-    "Somebody call 911. This is highway robbery. 🚨",
-    "Are you okay?? Did they threaten your pets?? 😭",
-    "The group chat is going to be LIT tonight. 🔥",
-    "This trade has been flagged by the League Justice Department. ⚖️",
-    "Commissioner check. NOW. 🚔",
-    "Buddy. BUDDY. What happened to you. 💀",
-    "Veto line starts here 👇",
+  robbery: [
+    "We need a second opinion immediately.",
+    "This belongs in the trade hall of shame.",
+    "That's not a trade. That's a donation.",
+    "One manager logged off very happy.",
+    "League chat is about to explode.",
+    "You might want to double-check this one.",
+    "Blink twice if you need help.",
+    "Commissioner check. NOW.",
+    "Veto line starts here.",
+    "Buddy. BUDDY. What happened to you.",
   ],
-  lopsided: [ // 20–35%
-    "Somebody's sleeping on the couch tonight. 😬",
-    "Yikes. That's a rough one. 😬",
-    "One side of this trade is very happy right now. 😏",
-    "The group chat is typing... 👀",
-    "Bold strategy. We'll see how it plays out. 🍿",
-    "Love the ambition. Question the math. 🧮",
+  lopsided: [
+    "One side definitely blinked.",
+    "This might get questioned in the group chat.",
+    "That's… a choice.",
+    "Hope you really like that player.",
+    "Slight overpay? Sure. Slight.",
+    "This won't age quietly.",
+    "One side of this trade is smiling right now.",
+    "Bold strategy. We'll see how it plays out.",
+    "Love the ambition. Question the math.",
   ],
-  slight: [ // 10–20%
-    "Slight advantage but let's see how those picks land. 👀",
-    "Edge goes one way. Barely. 🎯",
-    "Close enough that you can argue about it for weeks. 📢",
+  slight: [
+    "Lean, but not robbery.",
+    "One side feels a little better about this.",
+    "Small edge, nothing scandalous.",
+    "You knew what you were doing.",
+    "Mild finesse.",
+    "Not even worth arguing over.",
+    "Close enough that you can debate it for weeks.",
   ],
   fair: [
-    "Rare sighting: an actually fair dynasty trade. 📸",
-    "Both sides can feel good about this one. 🤝",
-    "The math checks out. Respect. 🧠",
+    "This is… actually reasonable.",
+    "No fleecing detected.",
+    "Both sides understood the assignment.",
+    "Shockingly balanced.",
+    "We have achieved fairness.",
+    "Nobody lost sleep over this one.",
+    "Rare sighting: an actually fair dynasty trade.",
+    "The math checks out. Respect.",
   ],
 };
 
-function tradeTrashTalk(pct, winnerName, loserName) {
-  let pool, color;
+function tradeTrashTalk(pct, winnerName, loserName, loserClsLabel) {
+  let pool, color, extra = '';
   if (pct > 0.35) {
     pool = TRADE_TRASH.robbery; color = 'var(--red)';
   } else if (pct > 0.20) {
     pool = TRADE_TRASH.lopsided; color = 'var(--yellow)';
+    // Smart context for lopsided trades
+    if (loserClsLabel && ['Contender','Fringe'].includes(loserClsLabel) && pct > 0.25)
+      extra = ' Buying wins isn\'t cheap.';
+    else if (loserClsLabel && (loserClsLabel.includes('Rebuild') || loserClsLabel === 'Retool') && pct > 0.25)
+      extra = ' This doesn\'t match your timeline.';
   } else if (pct > 0.10) {
     pool = TRADE_TRASH.slight; color = 'var(--muted)';
   } else {
     pool = TRADE_TRASH.fair; color = 'var(--green)';
   }
-  // deterministic pick based on team names so it stays consistent
   const seed = (winnerName + loserName).split('').reduce((s,c) => s + c.charCodeAt(0), 0);
-  return { text: pool[seed % pool.length], color };
+  return { text: pool[seed % pool.length] + extra, color };
 }
 
-function powerRankingVibe(rank, total, recentTrend) {
-  if (rank === 1) return '👑 Ruler';
-  if (rank === total) return '💀 Cooked';
-  if (rank === 2) return '😤 Chasing';
-  if (rank === total - 1) return '😬 Yikes';
-  if (recentTrend === 'hot') return '🔥 Hot';
-  if (recentTrend === 'cold') return '🥶 Cold';
-  if (rank <= Math.ceil(total * 0.33)) return '💪 Solid';
-  if (rank >= Math.floor(total * 0.67)) return '📉 Rough';
-  return '😐 Vibing';
+function powerRankingVibe(rank, total, recentTrend, clsLabel) {
+  const isContender = clsLabel === 'Contender' || clsLabel === 'Fringe';
+  const isRebuild   = (clsLabel||'').includes('Rebuild') || clsLabel === 'Retool';
+  const hot  = recentTrend === 'hot';
+  const cold = recentTrend === 'cold';
+
+  if (rank === 1 && hot)  return '🔥 Untouchable';
+  if (rank === 1)         return '👑 Ruler';
+  if (rank === total && cold) return '💀 Completely Cooked';
+  if (rank === total)     return '💀 Cooked';
+  if (rank === 2)         return '😤 Chasing';
+  if (rank === total - 1) return '🧯 Needs Help';
+
+  // Combo labels: trend + classification
+  if (hot && isContender)  return '🔥 Hot Contender';
+  if (hot && isRebuild)    return '📈 Rising Rebuilder';
+  if (hot)                 return '⚡ Surging';
+  if (cold && isContender) return '🥶 Sliding Contender';
+  if (cold && isRebuild)   return '🪦 Stuck Rebuild';
+  if (cold)                return '🧊 Frozen';
+
+  // Static rank + class combos
+  if (isContender && rank <= Math.ceil(total * 0.33)) return '🎯 Locked In';
+  if (isRebuild   && rank <= Math.ceil(total * 0.33)) return '📈 Rising Rebuilder';
+  if (rank <= Math.ceil(total * 0.33))  return '🧱 Built Solid';
+  if (rank >= Math.floor(total * 0.67)) return '📉 Rough Patch';
+  return '😐 Treading Water';
 }
 
 // ── RENDER: FRANCHISE INTEL ───────────────────────────────────
@@ -5833,7 +5922,7 @@ function renderFranchiseIntel() {
               <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
               <span style="font-size:.63rem;font-weight:700;color:${trajCfg.color}">${trajCfg.arrow} ${trajCfg.label}</span>
             </div>
-            <span style="font-size:.65rem;color:var(--muted);font-style:italic">${franchiseRoast(prof)}</span>
+            <span style="font-size:.65rem;color:var(--muted);font-style:italic">${franchiseRoast(prof, profiles)}</span>
           </div>
         </div>
       </div>
