@@ -2114,11 +2114,11 @@ function pickDisplayName(pick) {
 // Round 1 has bucket-differentiated fallbacks; other rounds are flat
 const PICK_FALLBACK = { 1: { early: 8200, mid: 5500, late: 3200 }, 2: 2200, 3: 1100, 4: 500 };
 
-// ── ROOKIE CLASS PROFILES ──────────────────────────────────────
-// Seasonal context for the Rookie Board banner. Update each year.
-// label: 'Elite'|'Strong'|'Average'|'Weak' — class-depth descriptor
-// note:  short human-readable summary of the class
-const ROOKIE_CLASS_PROFILES = {
+// ── ROOKIE CLASS BANNERS ───────────────────────────────────────
+// Human-readable Rookie Board banner labels. Separate from the pick-engine
+// ROOKIE_CLASS_PROFILES const (defined earlier) which drives valuation math.
+// Update each year. label: 'Elite'|'Strong'|'Average'|'Weak'|'Unknown'
+const ROOKIE_CLASS_BANNERS = {
   2022: { label: 'Strong',  note: 'Deep WR class led by London, Wilson, St. Brown' },
   2023: { label: 'Weak',    note: 'Shallow class; QB-heavy, limited elite skill talent' },
   2024: { label: 'Strong',  note: 'Deep TE/WR class; Nabers, Odunze, Bowers headlined' },
@@ -5382,7 +5382,7 @@ function renderRookieBoard() {
   }).join('');
 
   // Class profile banner
-  const classProfile = ROOKIE_CLASS_PROFILES[curYear];
+  const classProfile = ROOKIE_CLASS_BANNERS[curYear];
   const classBadgeColor = { Elite: '#f59e0b', Strong: '#3fb950', Average: '#8b949e', Weak: '#f85149', Unknown: '#6b7280' }[classProfile?.label] || '#6b7280';
   const anyExactSlots = Object.keys(knownSlots).length > 0;
   const classBanner = classProfile
