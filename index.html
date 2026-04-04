@@ -462,6 +462,24 @@
     .partner-score-track { height:5px;background:var(--border);border-radius:3px;margin:5px 0; }
     .partner-score-fill  { height:5px;border-radius:3px;background:var(--accent); }
 
+    /* ── STORYLINES ───────────────────────────────────────── */
+    .storyline-panel { display:flex;flex-direction:column;gap:8px;margin-bottom:24px; }
+    .storyline-card { background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;animation:fadeSlideIn .3s ease both; }
+    .storyline-card:nth-child(2) { animation-delay:.06s; }
+    .storyline-card:nth-child(3) { animation-delay:.12s; }
+    .storyline-icon { font-size:1.15rem;flex-shrink:0; }
+    .storyline-text { font-size:.83rem;color:var(--text);line-height:1.4; }
+    @keyframes fadeSlideIn { from { opacity:0;transform:translateY(5px); } to { opacity:1;transform:none; } }
+
+    /* ── RIVALRIES ────────────────────────────────────────── */
+    .rivalry-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-bottom:24px; }
+    .rivalry-card { background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;transition:border-color .15s,transform .12s; }
+    .rivalry-card:hover { border-color:rgba(139,92,246,.5);transform:translateY(-1px); }
+    .rivalry-teams { font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .rivalry-vs { color:var(--muted);font-weight:400;padding:0 5px; }
+    .rivalry-stat { font-size:.72rem;color:var(--muted);margin-top:3px;line-height:1.5; }
+    .rivalry-badge { display:inline-flex;padding:2px 7px;border-radius:4px;font-size:.64rem;font-weight:700;background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.25); }
+
     /* ── DISCORD SUMMARIES ────────────────────────────────── */
     .discord-box { background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:monospace;font-size:.73rem;color:var(--text);white-space:pre-wrap;max-height:200px;overflow-y:auto;line-height:1.5; }
 
@@ -2381,6 +2399,131 @@ function hsImg(pid, size=36, pos='?') {
 function hsLg(pid, pos='?') { return hsImg(pid, 64, pos); }
 
 // ── RENDER: OVERVIEW ─────────────────────────────────────────
+function computeStorylines(league) {
+  const { rosterMap, completedWeeks } = league;
+  if (completedWeeks.length < 3) return [];
+  const teams = Object.values(rosterMap);
+
+  // Build per-team weekly results
+  const weekResults = {};
+  teams.forEach(t => { weekResults[t.rosterId] = []; });
+  completedWeeks.forEach(({week, data}) => {
+    const pairs = {};
+    data.forEach(t => { if (t.matchup_id) { if (!pairs[t.matchup_id]) pairs[t.matchup_id]=[]; pairs[t.matchup_id].push(t); } });
+    Object.values(pairs).forEach(pair => {
+      if (pair.length !== 2) return;
+      const [a, b] = pair;
+      const aWon = (a.points||0) > (b.points||0);
+      if (weekResults[a.roster_id]) weekResults[a.roster_id].push({week, won:aWon,  pts:a.points||0});
+      if (weekResults[b.roster_id]) weekResults[b.roster_id].push({week, won:!aWon, pts:b.points||0});
+    });
+  });
+  teams.forEach(t => weekResults[t.rosterId].sort((a,b) => a.week - b.week));
+
+  const stories = [];
+
+  // Win/loss streaks
+  const streakInfo = [];
+  teams.forEach(t => {
+    const res = weekResults[t.rosterId];
+    if (!res.length) return;
+    const isWin = res[res.length-1].won;
+    let streak = 1;
+    for (let i = res.length-2; i >= 0; i--) { if (res[i].won === isWin) streak++; else break; }
+    streakInfo.push({teamName:t.teamName, streak, isWin});
+  });
+  const hotTeam  = streakInfo.filter(s => s.isWin  && s.streak >= 3).sort((a,b) => b.streak-a.streak)[0];
+  const coldTeam = streakInfo.filter(s => !s.isWin && s.streak >= 3).sort((a,b) => b.streak-a.streak)[0];
+  if (hotTeam)  stories.push({icon:'🔥', text:`<strong>${hotTeam.teamName}</strong> has won ${hotTeam.streak} straight and is on a hot streak`});
+  if (coldTeam) stories.push({icon:'📉', text:`<strong>${coldTeam.teamName}</strong> has dropped ${coldTeam.streak} straight — searching for answers`});
+
+  // Recent form vs overall standings movement
+  const fullStandings = [...teams].sort((a,b) => {
+    const wA = weekResults[a.rosterId].filter(r=>r.won).length;
+    const wB = weekResults[b.rosterId].filter(r=>r.won).length;
+    if (wB !== wA) return wB-wA;
+    return weekResults[b.rosterId].reduce((s,r)=>s+r.pts,0) - weekResults[a.rosterId].reduce((s,r)=>s+r.pts,0);
+  });
+  const rankMap = {};
+  fullStandings.forEach((t,i) => { rankMap[t.rosterId] = i+1; });
+
+  const recentResults = {};
+  teams.forEach(t => { recentResults[t.rosterId] = {wins:0, pts:0}; });
+  completedWeeks.slice(-3).forEach(({data}) => {
+    const pairs = {};
+    data.forEach(t => { if(t.matchup_id){if(!pairs[t.matchup_id])pairs[t.matchup_id]=[];pairs[t.matchup_id].push(t);} });
+    Object.values(pairs).forEach(pair => {
+      if(pair.length!==2) return;
+      const [a,b]=pair; const aW=(a.points||0)>(b.points||0);
+      if(recentResults[a.roster_id]){recentResults[a.roster_id].wins+=aW?1:0;recentResults[a.roster_id].pts+=a.points||0;}
+      if(recentResults[b.roster_id]){recentResults[b.roster_id].wins+=aW?0:1;recentResults[b.roster_id].pts+=b.points||0;}
+    });
+  });
+  const recentRankMap = {};
+  [...teams].sort((a,b)=>{
+    const rA=recentResults[a.rosterId], rB=recentResults[b.rosterId];
+    return rB.wins!==rA.wins ? rB.wins-rA.wins : rB.pts-rA.pts;
+  }).forEach((t,i) => { recentRankMap[t.rosterId]=i+1; });
+
+  const movements = teams.map(t => ({
+    teamName:t.teamName,
+    move:(rankMap[t.rosterId]||99) - (recentRankMap[t.rosterId]||99),
+  }));
+  const climber = movements.filter(m=>m.move>=3).sort((a,b)=>b.move-a.move)[0];
+  const faller  = movements.filter(m=>m.move<=-3).sort((a,b)=>a.move-b.move)[0];
+  if (climber && !hotTeam)  stories.push({icon:'📈', text:`<strong>${climber.teamName}</strong> has climbed ${climber.move} spots over the last 3 weeks`});
+  if (faller  && !coldTeam) stories.push({icon:'🧊', text:`<strong>${faller.teamName}</strong> has dropped ${Math.abs(faller.move)} spots over the last 3 weeks`});
+
+  // Contender tier parity / rebuild wave
+  if (S.fcValues.length) {
+    const rawProfs = teams.map(t => mveTeamProfile(t.rosterId,league)).filter(Boolean);
+    const profiles = mveClassifyTeams(rawProfs);
+    const contenders = profiles.filter(p=>p.classification.label==='Contender');
+    const rebuilds   = profiles.filter(p=>p.classification.label.includes('Rebuild'));
+    if (contenders.length >= 3) stories.push({icon:'⚔️', text:`<strong>${contenders.length} teams</strong> are classified as Contenders — the title race is wide open`});
+    else if (rebuilds.length >= 3 && stories.length < 2) stories.push({icon:'🏗️', text:`<strong>${rebuilds.length} teams</strong> are in full rebuild mode — a youth movement is underway`});
+  }
+
+  return stories.slice(0,3);
+}
+
+function computeRivalries(league) {
+  const { rosterMap, completedWeeks } = league;
+  const teams = Object.values(rosterMap);
+  if (completedWeeks.length < 2 || teams.length < 2) return [];
+
+  const h2h = {};
+  completedWeeks.forEach(({data}) => {
+    const pairs = {};
+    data.forEach(t => { if(t.matchup_id){if(!pairs[t.matchup_id])pairs[t.matchup_id]=[];pairs[t.matchup_id].push(t);} });
+    Object.values(pairs).forEach(pair => {
+      if (pair.length !== 2) return;
+      const [a, b] = pair;
+      const idA = Math.min(a.roster_id, b.roster_id);
+      const idB = Math.max(a.roster_id, b.roster_id);
+      const key = `${idA}_${idB}`;
+      if (!h2h[key]) h2h[key] = {idA, idB, games:0, aWins:0, bWins:0, margins:[]};
+      h2h[key].games++;
+      h2h[key].margins.push(Math.abs((a.points||0)-(b.points||0)));
+      if ((a.points||0) > (b.points||0)) { if(a.roster_id===idA) h2h[key].aWins++; else h2h[key].bWins++; }
+      else { if(b.roster_id===idA) h2h[key].aWins++; else h2h[key].bWins++; }
+    });
+  });
+
+  return Object.values(h2h).map(r => {
+    const tA = rosterMap[r.idA], tB = rosterMap[r.idB];
+    if (!tA || !tB) return null;
+    const avgMargin = r.margins.length ? r.margins.reduce((s,m)=>s+m,0)/r.margins.length : 999;
+    const balance   = r.games > 0 ? 1 - Math.abs(r.aWins-r.bWins)/r.games : 0;
+    const score     = r.games*10 + (1/(avgMargin+1))*500 + balance*15;
+    return {
+      teamA:tA.teamName, teamB:tB.teamName,
+      games:r.games, aWins:r.aWins, bWins:r.bWins,
+      avgMargin:Math.round(avgMargin*10)/10, score
+    };
+  }).filter(Boolean).sort((a,b)=>b.score-a.score).slice(0,6);
+}
+
 function renderOverview() {
   const league = ld();
   const data   = computeAllPlay(league);
@@ -2401,6 +2544,16 @@ function renderOverview() {
     html+=`<tr><td>${badge(i+1)}</td><td class="bold">${t.teamName}</td><td class="td-r">${t.wins}-${t.losses}${t.ties>0?'-'+t.ties:''}</td><td class="td-r">${t.ap.wins}-${t.ap.losses}</td><td class="td-r">${(t.apPct*100).toFixed(1)}%</td><td class="td-r">${fmtP(t.avgPts)}</td><td class="td-r">${fmtP(t.fpts)}</td><td class="td-r ${lc}">${t.luck>=0?'+':''}${fmt(t.luck)}</td></tr>`;
   });
   html+=`</tbody></table></div></div>`;
+  // League Storylines
+  const storylines = computeStorylines(league);
+  if (storylines.length) {
+    html += `<div class="section"><div class="section-title">League Storylines</div><div class="storyline-panel">`;
+    storylines.forEach(s => {
+      html += `<div class="storyline-card"><span class="storyline-icon">${s.icon}</span><span class="storyline-text">${s.text}</span></div>`;
+    });
+    html += `</div></div>`;
+  }
+
   html+=renderScheduleMatrix(league);
   html+=renderPositionStats(league);
   html+=renderWeeklyTable(league);
@@ -5614,111 +5767,12 @@ function renderRosters() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// FUN COMMENTARY — roasts, trash talk, vibes
+// FUN COMMENTARY — trash talk, vibes
 // ════════════════════════════════════════════════════════════════
 
 // Rotates daily so returning users see a fresh line, but it's stable within a session
 const _ROAST_DAY = Math.floor(Date.now() / 86400000);
 function _pick(arr, seed) { return arr[(seed + _ROAST_DAY) % arr.length]; }
-
-const ROAST_POOLS = {
-  contender: [
-    "Lineup looks like a problem nobody wants to solve.",
-    "This roster prints points. Simple as that.",
-    "Depth, studs, and zero excuses.",
-    "Everyone else is playing for second.",
-    "Weekly projection merchant. Respectfully.",
-    "This team doesn't rebuild. It reloads.",
-    "You're the matchup people check twice.",
-    "Built to win now. And probably later.",
-    "No weak links. That's rare.",
-    "You did this on purpose, didn't you?",
-  ],
-  contender_old: [
-    "Window is open. Clock is ticking.",
-    "Prime years on the clock. Don't waste them.",
-    "Veterans don't wait for next year.",
-    "The window doesn't stay open forever. Make your move.",
-  ],
-  contender_young: [
-    "This might last a while.",
-    "Built for now and later. Dangerous.",
-    "Young and already scary. Not fair.",
-    "The league hasn't caught up yet. Use it.",
-  ],
-  fringe: [
-    "One move away. Or five.",
-    "Playoff hopeful, title unlikely.",
-    "Every week is a coin flip.",
-    "Too strong to tank, too weak to scare anyone.",
-    "Dangerous enough to scare you, fragile enough to disappoint.",
-  ],
-  mid: [
-    "Stuck in the 'maybe next year' loop.",
-    "Good enough to compete, not enough to matter.",
-    "The definition of 6–7 wins.",
-    "Too strong to tank, too weak to scare anyone.",
-    "This roster needs a direction. Badly.",
-    "You're one move away. Or five.",
-    "Playoff hopeful, title unlikely.",
-    "Every week is a coin flip.",
-    "The most average team in the building.",
-    "This is a roster, technically.",
-  ],
-  retool: [
-    "It's not a rebuild, it's a 'strategic reset'.",
-    "Somewhere between good and bad. Committing to neither.",
-    "The squad is at a crossroads. Bring a GPS.",
-    "Championship window: check back later.",
-    "This roster needs a direction. Badly.",
-  ],
-  rebuild: [
-    "Future looks bright. Present does not.",
-    "You're playing the long game. Very long.",
-    "Points are optional, picks are not.",
-    "This roster is a construction site.",
-    "See you in 2027.",
-    "Trust the process. There is a process, right?",
-    "Roster value: high. Weekly points: not so much.",
-    "Hope you like rookies.",
-    "Wins are not the goal here.",
-    "Development program, not a contender.",
-  ],
-  rebuild_picks: [
-    "Draft capital merchant.",
-    "Picks everywhere. Patience required.",
-    "Future is loaded. Present is optional.",
-    "Every pick is a lottery ticket.",
-  ],
-  rebuild_nopicks: [
-    "No picks, no points. Bold strategy.",
-    "Rebuilding without capital is just losing with confidence.",
-    "The audacity to rebuild without picks.",
-    "Truly committed to doing this the hard way.",
-  ],
-};
-
-function franchiseRoast(prof, profiles) {
-  const cls = prof.classification.label;
-  const age = prof.weightedAge;
-  const pickVal = prof.pickValue;
-  const seed = prof.rosterId;
-  const isContender = cls === 'Contender' || cls === 'Fringe';
-  const isRebuild = cls.includes('Rebuild') || cls === 'Retool';
-
-  // Smart context variants take priority
-  if (isContender && age >= 29.5) return _pick(ROAST_POOLS.contender_old, seed);
-  if (isContender && age <= 25.5) return _pick(ROAST_POOLS.contender_young, seed);
-  if (isRebuild && pickVal < 5000) return _pick(ROAST_POOLS.rebuild_nopicks, seed);
-  if (isRebuild && pickVal > 20000) return _pick(ROAST_POOLS.rebuild_picks, seed);
-
-  // Classification pools
-  if (cls === 'Contender')         return _pick(ROAST_POOLS.contender, seed);
-  if (cls === 'Fringe')            return _pick(ROAST_POOLS.fringe, seed);
-  if (cls === 'Productive Middle') return _pick(ROAST_POOLS.mid, seed);
-  if (cls === 'Retool')            return _pick(ROAST_POOLS.retool, seed);
-  return _pick(ROAST_POOLS.rebuild, seed);
-}
 
 const TRADE_TRASH = {
   robbery: [
@@ -5889,27 +5943,6 @@ function renderFranchiseIntel() {
       `<div style="font-size:.71rem;color:var(--muted);padding:3px 0;border-top:1px solid var(--border);margin-top:3px">→ ${a}</div>`
     ).join('');
 
-    // Trajectory score
-    let traj = 0;
-    if (prof.weightedAge <= 25)       traj += 2;
-    else if (prof.weightedAge <= 27)  traj += 1;
-    else if (prof.weightedAge >= 30)  traj -= 2;
-    else if (prof.weightedAge >= 28.5) traj -= 1;
-    traj -= Math.min(3, prof.sellHighList.length);
-    if (prof.pickValue >= 15000)      traj += 2;
-    else if (prof.pickValue >= 8000)  traj += 1;
-    if (cl.label.includes('Rebuild')) traj += 1;
-    if (cl.label === 'Contender')     traj -= 1;
-    const trajCfg = traj >= 3
-      ? { arrow:'↑↑', label:'Rising',   color:'#22c55e' }
-      : traj >= 1
-      ? { arrow:'↑',  label:'Improving',color:'#86efac' }
-      : traj === 0
-      ? { arrow:'→',  label:'Stable',   color:'var(--muted)' }
-      : traj >= -2
-      ? { arrow:'↓',  label:'Declining',color:'var(--yellow)' }
-      : { arrow:'↓↓', label:'Falling',  color:'#f85149' };
-
     html += `<div class="franchise-card" id="fc-card-${prof.rosterId}">
       <button class="fc-hide-btn" onclick="toggleFranchiseCard(${prof.rosterId},this)" title="Hide from screenshot">✕</button>
       <div class="franchise-card-header">
@@ -5918,11 +5951,6 @@ function renderFranchiseIntel() {
           <div class="franchise-card-name" onclick="openRosterModal(${prof.rosterId})" title="View full roster">${prof.teamName}</div>
           <div style="margin-top:4px;display:flex;flex-direction:column;align-items:flex-start;gap:3px">
             <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
-            <div style="display:flex;align-items:center;gap:5px">
-              <span style="font-size:.63rem;color:var(--muted)">${cl.window}</span>
-              <span style="font-size:.63rem;font-weight:700;color:${trajCfg.color}">${trajCfg.arrow} ${trajCfg.label}</span>
-            </div>
-            <span style="font-size:.65rem;color:var(--muted);font-style:italic">${franchiseRoast(prof, profiles)}</span>
           </div>
         </div>
       </div>
@@ -6292,6 +6320,27 @@ function renderLeagueIntel() {
   });
 
   html += `</div>`;
+
+  // Rivalries
+  const rivalries = computeRivalries(league);
+  if (rivalries.length) {
+    html += `<div class="section-title" style="margin-top:28px">Rivalries ${tip('Head-to-head matchup history between pairs of teams. Ranked by how frequently they\'ve met, how close the games were, and how balanced the record is. The most contested pairings rise to the top.')}</div>
+    <div class="rivalry-grid">`;
+    rivalries.forEach(r => {
+      const rec = `${r.aWins}–${r.bWins}`;
+      const margin = r.avgMargin ? `avg margin ${r.avgMargin} pts` : '';
+      html += `<div class="rivalry-card">
+        <div class="rivalry-teams">${r.teamA}<span class="rivalry-vs">vs</span>${r.teamB}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+          <span class="rivalry-badge">${r.games} matchup${r.games!==1?'s':''}</span>
+          <span style="font-size:.72rem;color:var(--muted);font-weight:600">${rec}</span>
+        </div>
+        ${margin ? `<div class="rivalry-stat">${margin}</div>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
   document.getElementById('league-intel-content').innerHTML = html;
 }
 
@@ -8477,7 +8526,6 @@ function openRosterModal(rosterId) {
           <div class="rm-team-name">${prof.teamName}</div>
           <div style="margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="archetype-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border}">${cl.label}</span>
-            <span style="font-size:.62rem;color:var(--muted)">${cl.window}</span>
           </div>
         </div>
       </div>
