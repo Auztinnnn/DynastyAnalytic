@@ -5091,7 +5091,7 @@ function renderRookieBoard() {
         <tbody>${rows || '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted);font-size:.8rem">No rookies found — FantasyCalc may not have current-year rookies loaded yet.</td></tr>'}</tbody>
       </table>
     </div>
-    ${league ? `<div class="section-title" style="margin-bottom:10px">Team Needs by Position</div><div class="scout-needs-grid">${needsSummary}</div>` : ''}`;
+    ${league ? `<div data-ignore-capture><div class="section-title" style="margin-bottom:10px">Team Needs by Position</div><div class="scout-needs-grid">${needsSummary}</div></div>` : ''}`;
 }
 
 // ── RENDER: FANTASY WRAPPED ───────────────────────────────────
