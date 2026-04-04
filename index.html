@@ -1686,6 +1686,8 @@ let S = {
   ktcBySleeperId: {},     // ktc values keyed by sleeper ID (if CORS allows)
   ktcAvailable: false,    // whether KTC loaded successfully
   pickOwnership: {},      // { "season_round_origRosterId": { currentOwner, originalOwner, season, round } }
+  knownDraftSlots: {},    // rosterId(str) → pick slot(int) for the upcoming draft (e.g. 2026)
+  knownDraftSeason: null, // e.g. '2026' — season for which slots are known
   tradeA: { rosterId: null, players: [], picks: [] },
   tradeB: { rosterId: null, players: [], picks: [] },
   rostersSelected: null,
@@ -1942,6 +1944,30 @@ async function loadChain(startId) {
     S.pickOwnership = buildPickOwnership(S.leagues[S.currentLeagueId], tradedPicks);
   } catch(e) { console.warn('Pick ownership build failed:', e); S.pickOwnership = {}; }
 
+  // Fetch upcoming draft order so known pick slots (e.g. 2026 1.04) can be displayed
+  S.knownDraftSlots = {};
+  S.knownDraftSeason = null;
+  try {
+    const lg = S.leagues[S.currentLeagueId];
+    const isDraftDone = lg.league.status !== 'pre_draft';
+    const draftSeason = String(parseInt(lg.season) + (isDraftDone ? 1 : 0));
+    const upcomingDrafts = await fetch(`${BASE}/league/${S.currentLeagueId}/drafts`)
+      .then(r => r.ok ? r.json() : []).catch(() => []);
+    const upcoming = (upcomingDrafts || []).find(d =>
+      String(d.season) === draftSeason &&
+      d.status !== 'complete' &&
+      d.slot_to_roster_id &&
+      Object.keys(d.slot_to_roster_id).length > 0
+    );
+    if (upcoming) {
+      Object.entries(upcoming.slot_to_roster_id).forEach(([slot, rid]) => {
+        S.knownDraftSlots[String(rid)] = parseInt(slot);
+      });
+      S.knownDraftSeason = upcoming.season;
+      console.log(`[draft] Known ${draftSeason} draft order loaded: ${Object.keys(S.knownDraftSlots).length} teams`);
+    }
+  } catch(e) { /* non-critical — pick display degrades to Early/Mid/Late */ }
+
   // Process KTC (CORS usually blocks — 1.5s timeout, graceful fallback)
   S.ktcAvailable = false; S.ktcBySleeperId = {};
   try {
@@ -2113,6 +2139,16 @@ function getTeamPickList(rosterId) {
   );
 }
 
+// Interpolate a pick value from exact slot position within Early/Mid/Late range
+function slotToPickValue(slot, n, season) {
+  const pct = (slot - 1) / Math.max(n - 1, 1); // 0 = 1st pick, 1 = last pick
+  const earlyVal = getPickValue(season, 1, 'Early');
+  const midVal   = getPickValue(season, 1, 'Mid');
+  const lateVal  = getPickValue(season, 1, 'Late');
+  if (pct <= 0.5) return Math.round(earlyVal + (midVal - earlyVal) * (pct * 2));
+  return Math.round(midVal + (lateVal - midVal) * ((pct - 0.5) * 2));
+}
+
 function pickDisplayName(pick) {
   const roundName = ['','1st','2nd','3rd','4th'][pick.round] || `Rd ${pick.round}`;
   const league = ld();
@@ -2120,6 +2156,11 @@ function pickDisplayName(pick) {
   const via = pick.originalOwner !== pick.currentOwner
     ? ` (via ${origTeam ? origTeam.teamName : 'Team '+pick.originalOwner})`
     : '';
+  // Show exact slot when draft order is known (e.g. "2026 1.04")
+  if (pick.round === 1 && S.knownDraftSeason && String(pick.season) === String(S.knownDraftSeason)) {
+    const slot = S.knownDraftSlots[String(pick.originalOwner)];
+    if (slot) return `${pick.season} 1.${String(slot).padStart(2, '0')}${via}`;
+  }
   return `${pick.season} ${roundName}${via}`;
 }
 
@@ -4275,12 +4316,19 @@ function drawRoster(side, rosterId) {
       const rColor = pickRoundColor(p.round);
       const rdLabel= ['','1','2','3','4'][p.round] || p.round;
       const name   = pickDisplayName(p);
-      const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
-      const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
+      // If draft order is known for this pick, show exact slot badge; else Early/Mid/Late
+      const knownSlot = p.round === 1 && S.knownDraftSeason && String(p.season) === String(S.knownDraftSeason)
+        ? S.knownDraftSlots[String(p.originalOwner)] : null;
+      const bktBadge = knownSlot
+        ? `<span style="font-size:.55rem;padding:1px 5px;border-radius:3px;background:rgba(210,153,34,.15);color:#d29922;font-weight:700;letter-spacing:.02em">1.${String(knownSlot).padStart(2,'0')}</span>`
+        : (bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '');
+      const srcNote  = !knownSlot && bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
         ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">Proj</span>` : '';
       // Rich context for 1st-round picks
-      const ctx = p.round === 1 ? getPickContext(p.key, league) : null;
-      const val = ctx ? ctx.neutralValue : getPickValue(p.season, p.round, bkt && bkt.bucket);
+      const ctx = !knownSlot && p.round === 1 ? getPickContext(p.key, league) : null;
+      const n   = Object.keys(league.rosterMap).length || 12;
+      const val = knownSlot ? slotToPickValue(knownSlot, n, p.season)
+        : ctx ? ctx.neutralValue : getPickValue(p.season, p.round, bkt && bkt.bucket);
       // Context subtitle line
       let ctxSubHtml = '';
       if (ctx && p.round === 1) {
@@ -6554,7 +6602,10 @@ function renderRosters() {
 
     const pickBadges = prof.picks.slice(0, 10).map(pk => {
       const rc = pickRoundColor(pk.round);
-      return `<span class="pick-cap-badge"><span style="color:${rc};font-weight:700">${pk.round}</span>&thinsp;'${pk.season.toString().slice(2)}</span>`;
+      const knownSlot = pk.round === 1 && S.knownDraftSeason && String(pk.season) === String(S.knownDraftSeason)
+        ? S.knownDraftSlots[String(pk.originalOwner)] : null;
+      const label = knownSlot ? `1.${String(knownSlot).padStart(2,'0')}` : String(pk.round);
+      return `<span class="pick-cap-badge"><span style="color:${rc};font-weight:700">${label}</span>&thinsp;'${pk.season.toString().slice(2)}</span>`;
     }).join('');
     const picksHtml = prof.picks.length ? `<div class="rc-picks">
       <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Draft Capital · <span style="color:var(--yellow)">${prof.pickValue.toLocaleString()}</span></div>
@@ -6744,6 +6795,11 @@ function renderFranchiseIntel() {
 
     const pickBadges = prof.picks.slice(0,8).map(pk=>{
       const rc = pickRoundColor(pk.round);
+      const knownSlot = pk.round === 1 && S.knownDraftSeason && String(pk.season) === String(S.knownDraftSeason)
+        ? S.knownDraftSlots[String(pk.originalOwner)] : null;
+      if (knownSlot) {
+        return `<span class="pick-cap-badge"><span style="color:${rc};font-weight:700">1.${String(knownSlot).padStart(2,'0')}</span>&thinsp;'${pk.season.toString().slice(2)}</span>`;
+      }
       const origProf = pk.round === 1 ? profiles.find(p => p.rosterId === parseInt(pk.originalOwner)) : null;
       const bkt = origProf ? mveProjectedPickBucket(origProf, pk.season) : null;
       const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
@@ -9309,13 +9365,19 @@ function openRosterModal(rosterId) {
 
   let picksHtml = '';
   if (prof.picks && prof.picks.length) {
+    const rmN = Object.keys(league.rosterMap).length || 12;
     const pills = prof.picks.map(pk => {
       const rc  = pickRoundColor(pk.round);
-      const val = getPickValue(pk.season, pk.round, null);
+      const knownSlot = pk.round === 1 && S.knownDraftSeason && String(pk.season) === String(S.knownDraftSeason)
+        ? S.knownDraftSlots[String(pk.originalOwner)] : null;
+      const label = knownSlot
+        ? `1.${String(knownSlot).padStart(2,'0')}`
+        : (['','1st','2nd','3rd','4th'][pk.round] || `Rd${pk.round}`);
+      const val = knownSlot ? slotToPickValue(knownSlot, rmN, pk.season) : getPickValue(pk.season, pk.round, null);
       const via = pk.originalOwner !== prof.rosterId
         ? `<span style="color:var(--muted);font-size:.7rem">via ${rName(pk.originalOwner)}</span>` : '';
       return `<div class="rm-pick-pill">
-        <span style="font-weight:800;color:${rc}">${['','1st','2nd','3rd','4th'][pk.round]||`Rd${pk.round}`}</span>
+        <span style="font-weight:800;color:${rc}">${label}</span>
         <span style="color:var(--muted)">'${pk.season.toString().slice(2)}</span>
         ${via}
         ${val > 0 ? `<span style="color:var(--yellow)">${val.toLocaleString()}</span>` : ''}
