@@ -1859,7 +1859,7 @@ async function loadChain(startId) {
     fetch(`${FC_BASE}?isDynasty=true&numQbs=${isSF?2:1}&ppr=${ppr}`).then(r => r.json()),
     fetch(`${BASE}/league/${S.currentLeagueId}/traded_picks`).then(r => r.ok ? r.json() : []).catch(() => []),
     // Try local snapshot first (same-origin, no CORS); fall back to live KTC
-    fetch('./ktc-latest.json', { signal: AbortSignal.timeout(2000), cache: 'no-cache' })
+    fetch(`./ktc-latest.json?d=${new Date().toISOString().slice(0,10)}`, { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(snap => {
         if (snap && Array.isArray(snap.data)) return snap.data;   // snapshot format
