@@ -1856,9 +1856,19 @@ async function loadChain(startId) {
   const [fcRes, tradedPicksRes, ktcRes] = await Promise.allSettled([
     fetch(`${FC_BASE}?isDynasty=true&numQbs=${isSF?2:1}&ppr=${ppr}`).then(r => r.json()),
     fetch(`${BASE}/league/${S.currentLeagueId}/traded_picks`).then(r => r.ok ? r.json() : []).catch(() => []),
-    fetch('https://keeptradecut.com/api/dynasty-rankings', {
-      headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(1500)
-    }).then(r => r.ok ? r.json() : null).catch(() => null),
+    // Try local snapshot first (same-origin, no CORS); fall back to live KTC
+    fetch('./ktc-latest.json', { signal: AbortSignal.timeout(2000) })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(snap => {
+        if (snap && Array.isArray(snap.data)) return snap.data;   // snapshot format
+        if (Array.isArray(snap)) return snap;                      // raw array fallback
+        return Promise.reject();
+      })
+      .catch(() =>
+        fetch('https://keeptradecut.com/api/dynasty-rankings', {
+          headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(1500)
+        }).then(r => r.ok ? r.json() : null).catch(() => null)
+      ),
   ]);
 
   // Process FantasyCalc

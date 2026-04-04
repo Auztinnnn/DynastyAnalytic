@@ -1,0 +1,58 @@
+name: Update KTC Snapshot
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:          # allow manual trigger from Actions tab
+
+jobs:
+  update-ktc:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch KTC values
+        run: |
+          curl -sf \
+            -H "Accept: application/json" \
+            -H "User-Agent: Mozilla/5.0" \
+            --max-time 15 \
+            "https://keeptradecut.com/api/dynasty-rankings" \
+            -o raw_ktc.json
+
+      - name: Wrap with metadata
+        run: |
+          python3 - <<'EOF'
+          import json, datetime, sys
+
+          with open('raw_ktc.json') as f:
+              raw = json.load(f)
+
+          if not isinstance(raw, list):
+              print("Unexpected KTC response shape — aborting", file=sys.stderr)
+              sys.exit(1)
+
+          snapshot = {
+              "source": "ktc-snapshot",
+              "fetchedAt": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "playerCount": len(raw),
+              "data": raw
+          }
+
+          with open('ktc-latest.json', 'w') as f:
+              json.dump(snapshot, f, separators=(',', ':'))
+
+          print(f"Wrote snapshot: {len(raw)} players")
+          EOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ktc-latest.json
+          git diff --staged --quiet \
+            && echo "No changes to KTC snapshot." \
+            || (git commit -m "chore: update KTC snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)" && git push)
