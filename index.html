@@ -1973,7 +1973,12 @@ async function loadChain(startId) {
   try {
     const ktcData = ktcRes.status === 'fulfilled' ? ktcRes.value : null;
     if (Array.isArray(ktcData)) {
-      ktcData.forEach(p => { if (p.sleeperId) S.ktcBySleeperId[String(p.sleeperId)] = p.value || 0; });
+      ktcData.forEach(p => {
+        if (!p.sleeperId) return;
+        // Use SF value for superflex leagues when available; fall back to 1QB value
+        const val = isSF ? (p.sfValue || p.sf_value || p.value || 0) : (p.value || 0);
+        S.ktcBySleeperId[String(p.sleeperId)] = val;
+      });
       S.ktcAvailable = Object.keys(S.ktcBySleeperId).length > 0;
     }
   } catch(e) { /* fallback to FC-only */ }

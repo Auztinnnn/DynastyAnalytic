@@ -30,15 +30,16 @@ jobs:
           const { chromium } = require('playwright');
           const fs = require('fs');
 
-          // Check whether an array looks like real player data (has names or sleeper IDs).
+          // Check whether an array looks like real player data (has names or player IDs).
           // The /histories endpoint returns arrays of encoded value-history objects with
-          // no playerName or sleeperId — we must reject those.
+          // no playerName or player IDs — we must reject those.
           function looksLikePlayers(arr) {
             if (!Array.isArray(arr) || arr.length < 10) return false;
             const sample = arr.slice(0, 5);
             return sample.some(p =>
               p && typeof p === 'object' &&
-              (p.playerName || p.name || p.player || p.sleeperId || p.sleeper_id || p.sleeperID)
+              (p.playerName || p.name || p.player || p.sleeperId || p.sleeper_id || p.sleeperID ||
+               p.playerID   || p.mflid || p.sf_value !== undefined)
             );
           }
 
@@ -76,16 +77,24 @@ jobs:
             return deepFind(obj, 0);
           }
 
-          // Normalise a player object to { sleeperId, playerName, value }
+          // Normalise a player object to { sleeperId, playerName, value, sfValue }
           // KTC field names vary; we accept several known aliases.
+          // KTC embeds SF value in oneQBValues/superflex sub-objects — hoist both.
           function normalise(raw) {
-            return raw.map(p => ({
-              sleeperId:  p.sleeperId  ?? p.sleeper_id ?? p.sleeperID ?? null,
-              playerName: p.playerName ?? p.name       ?? p.player    ?? '',
-              value:      p.value      ?? p.sf_value   ?? p.ktcValue  ?? 0,
-              // pass through everything else so the frontend can use original fields
-              ...p,
-            }));
+            return raw.map(p => {
+              // KTC window.playersArray nests values under overallTier/superflexValues etc.
+              // Common shapes: p.value, p.sf_value, p.superflexValues?.value, p.oneQBValues?.value
+              const sfVal  = p.sf_value ?? p.superflexValues?.value ?? p.superflex?.value ?? p.sfValue ?? null;
+              const oneVal = p.value    ?? p.oneQBValues?.value     ?? p.oneqb?.value     ?? p.ktcValue ?? 0;
+              return {
+                sleeperId:  p.sleeperId  ?? p.sleeper_id ?? p.sleeperID ?? null,
+                playerName: p.playerName ?? p.name       ?? p.player    ?? '',
+                value:      oneVal,
+                sfValue:    sfVal ?? oneVal,
+                // pass through everything else so the frontend can use original fields
+                ...p,
+              };
+            });
           }
 
           (async () => {
@@ -124,6 +133,13 @@ jobs:
               } catch (_) {}
             });
 
+            // Forward browser console.log to Node stdout for debugging
+            page.on('console', msg => {
+              if (msg.type() === 'log' || msg.type() === 'error') {
+                console.log(`[browser] ${msg.text()}`);
+              }
+            });
+
             // Navigate; use domcontentloaded (ad networks fire forever, networkidle never settles).
             // Wait for /histories so the page fully initialises before we try other methods.
             const historiesPromise = page.waitForResponse(
@@ -137,6 +153,13 @@ jobs:
               timeout: 30000,
             });
             await historiesPromise;
+
+            // playersArray is populated asynchronously after the histories XHR — wait for it
+            console.log('Waiting for window.playersArray to be populated...');
+            await page.waitForFunction(
+              () => Array.isArray(window.playersArray) && window.playersArray.length > 50,
+              { timeout: 15000 }
+            ).catch(() => console.log('window.playersArray not found within 15s — will try other methods'));
 
             // ── Method 2: same-origin in-browser fetch ────────────────
             // Since we're already on keeptradecut.com, fetch the JSON API directly
@@ -212,11 +235,18 @@ jobs:
               console.log('Trying window globals...');
               try {
                 const globals = await page.evaluate(() => {
-                  const candidates = ['__INITIAL_STATE__', '__REDUX_STATE__', '__APP_DATA__', 'playerValues', 'rankingData', 'players'];
+                  // playersArray is KTC's known global with full player data
+                  const candidates = ['playersArray', '__INITIAL_STATE__', '__REDUX_STATE__', '__APP_DATA__', 'playerValues', 'rankingData', 'players'];
                   const out = {};
                   for (const k of candidates) {
                     if (window[k]) out[k] = window[k];
                   }
+                  // Log all large array globals for debugging (console.log now forwarded to Node stdout)
+                  const bigArrays = Object.keys(window).filter(k => { try { return Array.isArray(window[k]) && window[k].length > 50; } catch(_) { return false; } });
+                  console.log('[globals-scan] Large arrays on window:', bigArrays.join(', ') || '(none)');
+                  // Also log all non-standard window keys that look like data
+                  const dataKeys = Object.keys(window).filter(k => !['location','document','history','navigator','performance'].includes(k) && /^[a-z]/i.test(k) && typeof window[k] === 'object' && window[k] !== null && !Array.isArray(window[k]) && Object.keys(window[k]).length > 5 && Object.keys(window[k]).length < 200);
+                  console.log('[globals-scan] Candidate object globals:', dataKeys.slice(0,20).join(', ') || '(none)');
                   return out;
                 });
                 for (const [key, val] of Object.entries(globals)) {
@@ -241,6 +271,45 @@ jobs:
               console.error('Check the [xhr] log lines above for clues about the actual response shape.');
               process.exit(1);
             }
+
+            // ── Sleeper name → ID mapping ─────────────────────────────
+            // KTC uses playerID/mflid, not sleeperId. Fetch Sleeper's full
+            // NFL player database and match by normalized name + position.
+            console.log('Fetching Sleeper player database for name→ID mapping...');
+            let sleeperByKey = {};   // "firstname lastname|pos" → sleeper_id
+            let sleeperByName = {};  // "firstname lastname"     → sleeper_id (fallback)
+            try {
+              const sleeperRes = await fetch('https://api.sleeper.app/v1/players/nfl');
+              const sleeperPlayers = await sleeperRes.json();
+              const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+              for (const [sid, sp] of Object.entries(sleeperPlayers)) {
+                if (!sp.full_name && !(sp.first_name && sp.last_name)) continue;
+                const fullName = norm(sp.full_name || `${sp.first_name} ${sp.last_name}`);
+                const pos = (sp.fantasy_positions?.[0] || sp.position || '').toUpperCase();
+                const key = `${fullName}|${pos}`;
+                // Prefer active/recent players if there are collisions
+                if (!sleeperByKey[key] || sp.active) sleeperByKey[key] = sid;
+                if (!sleeperByName[fullName] || sp.active) sleeperByName[fullName] = sid;
+              }
+              console.log(`[sleeper] Loaded ${Object.keys(sleeperPlayers).length} players`);
+            } catch (e) {
+              console.log('[sleeper] Failed to fetch player database:', e.message);
+            }
+
+            // Attach sleeperId to each KTC player via name match
+            const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+            let matched = 0;
+            for (const p of final) {
+              if (p.sleeperId || p.sleeper_id || p.sleeperID) {
+                matched++;
+                continue; // already has one
+              }
+              const name = norm(p.playerName || p.name || p.player || '');
+              const pos  = (p.position || p.pos || '').toUpperCase();
+              const sid  = sleeperByKey[`${name}|${pos}`] || sleeperByName[name] || null;
+              if (sid) { p.sleeperId = sid; matched++; }
+            }
+            console.log(`[sleeper] Matched ${matched}/${final.length} players to Sleeper IDs`);
 
             const normalised = normalise(final);
             const snapshot = {
