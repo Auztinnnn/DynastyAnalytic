@@ -1843,9 +1843,11 @@ function mveProjectedPickBucket(teamProfile, season) {
 
 function pickBucketHtml(bucket, confidence) {
   if (!bucket || bucket === 'Mid') return '';
-  const cls = `bucket-badge bucket-${bucket.toLowerCase()}${confidence === 'low' ? ' bucket-conf-low' : ''}`;
-  const confLabel = confidence !== 'high' ? ` <span style="font-size:.52rem;opacity:.75">${confidence}</span>` : '';
-  return `<span class="${cls}">${bucket}${confLabel}</span>`;
+  let label = bucket, opacity = 1;
+  if (confidence === 'medium') { label = '~' + bucket; opacity = 0.8; }
+  else if (confidence === 'low') { label = bucket + '?'; opacity = 0.55; }
+  const cls = `bucket-badge bucket-${bucket.toLowerCase()}`;
+  return `<span class="${cls}" style="opacity:${opacity}" title="Projection confidence: ${confidence}">${label}</span>`;
 }
 
 function pickRoundColor(round) {
@@ -2925,11 +2927,16 @@ function renderPlayersTab() {
 
   const viewBtns = buildPlayersViewBtns();
 
+  const ktcNote = playersView === 'cards' && !S.ktcAvailable
+    ? `<div style="font-size:.68rem;color:var(--muted);margin-top:6px;font-style:italic">Timing signals require KTC \u2014 may not be available on file:// pages.</div>`
+    : '';
+
   document.getElementById('players-content').innerHTML = `
     <div class="players-controls" style="flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:6px">${viewBtns}</div>
       ${controls}
     </div>
+    ${ktcNote}
     <div id="players-grid" class="inline-loading"><div class="spinner" style="margin:0 auto 8px"></div>Loading...</div>`;
 
   if (playersView === 'cards') {
@@ -3033,8 +3040,14 @@ async function loadPlayersWeek(week) {
     const sl    = statLine(st, pos);
     const ptsClass = pts >= maxPts * 0.8 ? 'top' : pts >= maxPts * 0.5 ? 'good' : '';
     const hasPts = pts > 0;
+    const sf = owner ? mveStarterFlag(pid, owner.rosterId, league) : null;
+    const sfBadge = sf === 'Starter'
+      ? `<span style="background:rgba(63,185,80,.15);color:var(--green);font-size:.58rem;padding:1px 5px;border-radius:3px;margin-left:4px">Starter</span>`
+      : sf === 'Fringe'
+      ? `<span style="background:rgba(210,153,34,.15);color:var(--yellow);font-size:.58rem;padding:1px 5px;border-radius:3px;margin-left:4px">Fringe</span>`
+      : '';
     const ownerLine = owner
-      ? `<div class="player-card-owner">&#127968; ${owner.teamName}</div>`
+      ? `<div class="player-card-owner" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">&#127968; ${owner.teamName}${sfBadge}</div>`
       : `<div class="player-card-owner" style="color:var(--green);font-weight:600">✦ Free Agent</div>`;
     const teamBadge = nflTeam ? `<span class="nfl-team">${nflTeam}</span>` : '';
 
@@ -3042,6 +3055,7 @@ async function loadPlayersWeek(week) {
     const mv = mvePlayer(pid, league);
     const sigCls = { Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
     const mvReasons = mv ? mveExplainPlayer(mv, league) : [];
+    const weeklySig = mv && S.ktcAvailable ? mveWeeklySignal(mv, league) : null;
     const dynastyRow = mv ? `
       <div style="display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap">
         <span style="font-size:.65rem;color:var(--muted);background:var(--surface2);border-radius:3px;padding:1px 5px">T${mv.tier}</span>
@@ -3049,6 +3063,7 @@ async function loadPlayersWeek(week) {
         <span class="signal-badge ${sigCls[mv.actionTag]||'signal-hold'}">${mv.actionTag}</span>
         <span style="font-size:.6rem;color:var(--muted)">${mv.roleLabel}</span>
       </div>
+      ${weeklySig ? `<div style="font-size:.62rem;color:${weeklySig.color};margin-top:2px;font-style:italic">${weeklySig.label}</div>` : ''}
       ${mvReasons.length ? `<div class="explain-chips" style="margin-top:3px">${mvReasons.slice(0,3).map(r=>`<span class="explain-chip">${r}</span>`).join('')}</div>` : ''}` : '';
 
     return `<div class="player-card">
@@ -3471,9 +3486,19 @@ function drawPicks(side) {
     const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
     const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid'
       ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">proj</span>` : '';
+    const confNote = p.round === 1 && bkt
+      ? (bkt.confidence === 'medium'
+        ? `<div style="font-size:.58rem;color:var(--muted);margin-top:1px">Moderate projection confidence</div>`
+        : bkt.confidence === 'low'
+        ? `<div style="font-size:.58rem;color:var(--yellow);margin-top:1px">Low projection confidence — team strength unclear</div>`
+        : '')
+      : '';
     return `<div class="pick-row ${sel?'selected':''}" onclick="togglePick('${side}','${p.key}')">
       <span class="pick-badge" style="background:${rColor}22;color:${rColor}">${rdLabel}</span>
-      <span class="player-name" style="font-size:.8rem;display:flex;align-items:center;gap:4px">${name}${bktBadge}${srcNote}</span>
+      <div style="flex:1;min-width:0">
+        <span class="player-name" style="font-size:.8rem;display:flex;align-items:center;gap:4px">${name}${bktBadge}${srcNote}</span>
+        ${confNote}
+      </div>
       <span class="player-value" style="color:var(--yellow)">${val > 0 ? val.toLocaleString() : '-'}</span>
     </div>`;
   }).join('');
@@ -3482,6 +3507,50 @@ function drawPicks(side) {
 function togglePl(side,pid){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.players.indexOf(pid); if(idx>=0)ts.players.splice(idx,1);else ts.players.push(pid); drawRoster(side,ts.rosterId); updateProposal(); }
 function togglePick(side,key){ const ts=side==='A'?S.tradeA:S.tradeB; const idx=ts.picks.indexOf(key); if(idx>=0)ts.picks.splice(idx,1);else ts.picks.push(key); drawPicks(side); updateProposal(); }
 function onTradeTeam(side){ const id=parseInt(document.getElementById('tradeTeam'+side).value); const ts=side==='A'?S.tradeA:S.tradeB; ts.rosterId=id; ts.players=[]; ts.picks=[]; drawRoster(side,id); updateProposal(); renderScoutingReport(S.tradeA.rosterId, S.tradeB.rosterId); }
+
+function tradeContextNote(tA, tB, league) {
+  const profA = mveTeamProfile(tA.rosterId, league);
+  const profB = mveTeamProfile(tB.rosterId, league);
+  if (!profA || !profB) return [];
+  const clsA = profA.classification.label;
+  const clsB = profB.classification.label;
+  const notes = [];
+
+  const youngStarsLeavingA = tA.players
+    .map(pid => mvePlayer(pid, league))
+    .filter(p => p && p.tier <= 2 && parseInt(p.age) <= 26);
+  if (['Contender','Fringe'].includes(clsA) && youngStarsLeavingA.length > 0)
+    notes.push(`\u26a0 ${profA.teamName} is trading away a young cornerstone \u2014 contenders rarely recover from this`);
+
+  const picksLeavingA = tA.picks.length;
+  if (clsA.includes('Rebuild') && picksLeavingA >= 2)
+    notes.push(`\u26a0 ${profA.teamName} is trading multiple picks while rebuilding \u2014 rebuild capital depleted`);
+
+  const youngStarsLeavingB = tB.players
+    .map(pid => mvePlayer(pid, league))
+    .filter(p => p && p.tier <= 2 && parseInt(p.age) <= 26);
+  if (['Contender','Fringe'].includes(clsB) && youngStarsLeavingB.length > 0)
+    notes.push(`\u26a0 ${profB.teamName} is trading away a young cornerstone \u2014 contenders rarely recover from this`);
+
+  const picksLeavingB = tB.picks.length;
+  if (clsB.includes('Rebuild') && picksLeavingB >= 2)
+    notes.push(`\u26a0 ${profB.teamName} is trading multiple picks while rebuilding \u2014 rebuild capital depleted`);
+
+  if (['Contender','Fringe'].includes(clsB)) {
+    const incomingB = tA.players.map(pid => mvePlayer(pid, league)).filter(Boolean);
+    const allBench = incomingB.every(p => p.tier >= 4);
+    if (allBench && incomingB.length > 0)
+      notes.push(`Note: ${profB.teamName} (${clsB}) gains bench depth \u2014 may not move the needle this season`);
+  }
+  if (['Contender','Fringe'].includes(clsA)) {
+    const incomingA = tB.players.map(pid => mvePlayer(pid, league)).filter(Boolean);
+    const allBench = incomingA.every(p => p.tier >= 4);
+    if (allBench && incomingA.length > 0)
+      notes.push(`Note: ${profA.teamName} (${clsA}) gains bench depth \u2014 may not move the needle this season`);
+  }
+
+  return notes;
+}
 
 function updateProposal() {
   const league = ld();
@@ -3527,9 +3596,19 @@ function updateProposal() {
       const curTeamId = side === 'A' ? S.tradeA.rosterId : S.tradeB.rosterId;
       const via = origOwner !== parseInt(curTeamId) ? ` via ${rName(origOwner)}` : '';
       const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
+      const confNote = round === 1 && bkt
+        ? (bkt.confidence === 'medium'
+          ? `<div style="font-size:.58rem;color:var(--muted);margin-top:1px">Moderate projection confidence</div>`
+          : bkt.confidence === 'low'
+          ? `<div style="font-size:.58rem;color:var(--yellow);margin-top:1px">Low projection confidence — team strength unclear</div>`
+          : '')
+        : '';
       return `<div class="pick-chip">
         <span class="pick-badge" style="background:${rColor}22;color:${rColor}">${round}</span>
-        <span style="flex:1;font-size:.8rem;display:flex;align-items:center;gap:5px">${season} ${rdName}${via}${bktBadge}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.8rem;display:flex;align-items:center;gap:5px">${season} ${rdName}${via}${bktBadge}</div>
+          ${confNote}
+        </div>
         <span style="color:var(--yellow);font-size:.75rem">${val.toLocaleString()}</span>
         <span class="remove" onclick="togglePick('${side}','${key}')">&#x2715;</span>
       </div>`;
@@ -3691,7 +3770,12 @@ function updateProposal() {
         : 'tier defaults — load league for precise values'}</div>`
     : '';
 
-  v.innerHTML = `<div class="trade-verdict ${verdictClass}">${verdictText}</div>${ktcNote}${pickSrcNote}${mveHtml}`;
+  const ctxNotes = S.fcValues.length > 0 ? tradeContextNote(S.tradeA, S.tradeB, league) : [];
+  const ctxHtml = ctxNotes.map(note =>
+    `<div style="font-size:.73rem;color:var(--yellow);margin-top:6px;padding:6px 10px;background:rgba(210,153,34,.08);border-radius:6px;border-left:2px solid var(--yellow)">${note}</div>`
+  ).join('');
+
+  v.innerHTML = `<div class="trade-verdict ${verdictClass}">${verdictText}</div>${ktcNote}${pickSrcNote}${ctxHtml}${mveHtml}`;
 }
 
 // ── TRADE SCOUTING REPORT ─────────────────────────────────────
@@ -4174,8 +4258,26 @@ function mvePlayer(pid, league) {
   // 5. Format multiplier
   const fmtMult = mveFormatMult(league, pos, tier);
 
-  // 6. Neutral value
-  const neutral = Math.round(Math.max(0, base + sentAdj + tierAdj + roleAdj + riskAdj) * fmtMult);
+  // 5a. Interaction effects — non-linear adjustments for compounding situations
+  let interactionBonus = 0;
+  if (tier <= 2 && roleLabel === 'Elite Locked-In') {
+    interactionBonus += base * 0.05; // elite players in secure roles > sum of parts
+  }
+  if (tier <= 2 && parseInt(age) <= 23) {
+    interactionBonus += base * 0.04; // market often undervalues elite + very young combo
+  }
+  if (roleLabel === 'Buried' && riskLabel === 'High') {
+    interactionBonus -= base * 0.07; // compound decay — role AND age working against
+  }
+  if (pos === 'RB' && roleLabel === 'Volatile/Committee' && parseInt(age) >= 28) {
+    interactionBonus -= base * 0.05; // role instability AND declining athleticism
+  }
+  if (parseInt(age) <= 22 && sentAdj > base * 0.12) {
+    interactionBonus += base * 0.03; // young + rising sentiment: market onto something real
+  }
+
+  // 6. Neutral value (includes interaction bonus)
+  const neutral = Math.round(Math.max(0, base + sentAdj + tierAdj + roleAdj + riskAdj + interactionBonus) * fmtMult);
 
   // 7. Context-specific values
   const { contenderValue, rebuilderValue } = mveContenderRebuilder(neutral, fc, tier);
@@ -4194,6 +4296,7 @@ function mvePlayer(pid, league) {
     roleAdj: Math.round(roleAdj),
     riskAdj: Math.round(riskAdj),
     riskScore, riskLabel, roleLabel, liquidity, actionTag,
+    interactionBonus: Math.round(interactionBonus),
   };
 }
 
@@ -4681,23 +4784,46 @@ function renderFranchiseIntel() {
     ).join('');
 
     // Key assets
-    const csList = prof.cornerstones.slice(0,3).map(p=>`
-      <div class="franchise-asset-row">
+    const csList = prof.cornerstones.slice(0,3).map(p=>{
+      const sf = mveStarterFlag(p.pid, prof.rosterId, league);
+      const sfBadge = sf === 'Starter'
+        ? `<span style="background:rgba(63,185,80,.15);color:var(--green);font-size:.58rem;padding:1px 5px;border-radius:3px;flex-shrink:0">Starter</span>`
+        : sf === 'Fringe'
+        ? `<span style="background:rgba(210,153,34,.15);color:var(--yellow);font-size:.58rem;padding:1px 5px;border-radius:3px;flex-shrink:0">Fringe</span>`
+        : '';
+      return `<div class="franchise-asset-row">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="franchise-asset-name">${p.name}</span>
+        ${sfBadge}
         <span class="franchise-asset-val">${p.neutral.toLocaleString()}</span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
-    const sellList = prof.sellHighList.slice(0,3).map(p=>`
-      <div class="franchise-asset-row">
+    const sellList = prof.sellHighList.slice(0,3).map(p=>{
+      const sf = mveStarterFlag(p.pid, prof.rosterId, league);
+      const sfBadge = sf === 'Starter'
+        ? `<span style="background:rgba(63,185,80,.15);color:var(--green);font-size:.58rem;padding:1px 5px;border-radius:3px;flex-shrink:0">Starter</span>`
+        : sf === 'Fringe'
+        ? `<span style="background:rgba(210,153,34,.15);color:var(--yellow);font-size:.58rem;padding:1px 5px;border-radius:3px;flex-shrink:0">Fringe</span>`
+        : '';
+      const stillStartingNote = sf === 'Starter'
+        ? `<span style="font-size:.58rem;color:var(--muted);flex-shrink:0">still starting</span>`
+        : '';
+      return `<div class="franchise-asset-row">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="franchise-asset-name">${p.name}</span>
+        ${sfBadge}
+        ${stillStartingNote}
         <span class="signal-badge signal-${p.actionTag==='Sell'?'sell':'hold'}">${p.actionTag.toUpperCase()}</span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     const pickBadges = prof.picks.slice(0,8).map(pk=>{
       const rc = pickRoundColor(pk.round);
-      return `<span class="pick-cap-badge"><span style="color:${rc};font-weight:700">${pk.round}</span>&thinsp;'${pk.season.toString().slice(2)}</span>`;
+      const origProf = pk.round === 1 ? profiles.find(p => p.rosterId === parseInt(pk.originalOwner)) : null;
+      const bkt = origProf ? mveProjectedPickBucket(origProf, pk.season) : null;
+      const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
+      return `<span class="pick-cap-badge"><span style="color:${rc};font-weight:700">${pk.round}</span>&thinsp;'${pk.season.toString().slice(2)}${bktBadge ? '&thinsp;' + bktBadge : ''}</span>`;
     }).join('');
 
     const teamExplain = mveExplainTeam(prof);
@@ -4764,10 +4890,27 @@ function renderFranchiseIntel() {
 
       ${prof.actions.length ? `<div>${actHtml}</div>` : ''}
       ${teamExplain.length ? `<div style="margin-top:5px"><div class="explain-chips">${teamExplain.slice(0,4).map(r=>`<span class="explain-chip">${r}</span>`).join('')}</div></div>` : ''}
+      <button onclick="openTradeFinder(${prof.rosterId})" style="margin-top:8px;width:100%;background:rgba(88,166,255,.1);color:var(--accent);border:1px solid rgba(88,166,255,.25);border-radius:6px;padding:5px 10px;font-size:.72rem;font-weight:600;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(88,166,255,.18)'" onmouseout="this.style.background='rgba(88,166,255,.1)'">🔍 Trade Finder</button>
     </div>`;
   });
 
   html += `</div></div>`; // close franchise-grid and franchise-snapshot
+
+  // ── Trade Finder section ──────────────────────────────────────
+  const teamOpts = profiles.map(p =>
+    `<option value="${p.rosterId}">${p.teamName}</option>`
+  ).join('');
+  html += `<div id="trade-finder-section" style="margin-top:24px;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none">
+    <div style="padding:9px 14px;background:var(--surface2);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:.8rem;font-weight:600;color:var(--text)">🔍 Trade Finder</span>
+      <select id="partnerMyTeam" onchange="refreshPartners()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:.78rem">
+        <option value="">Select your team…</option>
+        ${teamOpts}
+      </select>
+      <span style="font-size:.68rem;color:var(--muted)">Best trade partners + specific targets ranked by fit</span>
+    </div>
+    <div id="partner-results" style="padding:12px 14px"></div>
+  </div>`;
 
   // ── Advanced / Debug ──────────────────────────────────────────
   html += `<details style="margin-top:24px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
@@ -4794,6 +4937,16 @@ function refreshPartners() {
   const rid = parseInt(sel.value);
   if (!rid || !window._franchiseProfiles) { out.innerHTML=''; return; }
   out.innerHTML = renderTradePartners(rid, window._franchiseProfiles);
+}
+
+function openTradeFinder(rosterId) {
+  const sec = document.getElementById('trade-finder-section');
+  const sel = document.getElementById('partnerMyTeam');
+  if (!sec || !sel) return;
+  sel.value = rosterId;
+  sec.style.display = 'block';
+  refreshPartners();
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function showDiscordSummary(type) {
@@ -5105,7 +5258,33 @@ function mveExplainPlayer(mv, league) {
   if (mv.contenderValue > mv.neutral * 1.04) reasons.push('Contender lens premium (proven producer)');
   if (mv.rebuilderValue > mv.neutral * 1.04) reasons.push('Rebuilder lens premium (youth/upside)');
 
+  if (mv.interactionBonus && Math.abs(mv.interactionBonus) > (mv.fcValue || 1) * 0.03) {
+    if (mv.interactionBonus > 0) reasons.push('Elite role lock-in — compounding premium applied');
+    else reasons.push('Compounding risk factors — amplified discount applied');
+  }
+
   return reasons.slice(0, 4);
+}
+
+function mveWeeklySignal(mv, league) {
+  if (!mv) return null;
+  const sentPct = mv.fcValue > 0 ? mv.sentAdj / mv.fcValue : 0;
+  const isSellTag  = mv.actionTag === 'Sell' || mv.actionTag === 'Shop';
+  const isBuyTag   = mv.actionTag === 'Buy'  || mv.actionTag === 'Speculative';
+  const sentRising  = sentPct >  0.08;
+  const sentFalling = sentPct < -0.08;
+
+  if (isSellTag && sentRising)
+    return { signal: 'sell-window', label: 'Sell window \u2014 market elevated, act now', color: 'var(--red)' };
+  if (isSellTag && sentFalling)
+    return { signal: 'sell-late', label: 'Value eroding \u2014 market already moving on', color: 'var(--yellow)' };
+  if (isBuyTag && sentFalling)
+    return { signal: 'buy-window', label: 'Buy window \u2014 market undervaluing this player', color: 'var(--green)' };
+  if (isBuyTag && sentRising)
+    return { signal: 'rising', label: 'Rising \u2014 buy before price increases further', color: 'var(--accent)' };
+  if (mv.actionTag === 'Hold' && sentRising)
+    return { signal: 'hold-elevated', label: 'Hold \u2014 market premium suggests sell consideration', color: 'var(--yellow)' };
+  return null;
 }
 
 function mveExplainTeam(prof) {
@@ -5243,6 +5422,22 @@ function mveBestLineup(players, league) {
   return { starters, starterValue, posTotals };
 }
 
+function mveStarterFlag(pid, rosterId, league) {
+  const roster = league.rosterMap[rosterId];
+  if (!roster) return null;
+  const players = roster.players.map(p => mvePlayer(p, league)).filter(Boolean);
+  const lineup = mveBestLineup(players, league);
+  const isStarter = lineup.starters.some(p => p.pid === String(pid));
+  const isFringe = !isStarter && (() => {
+    const mv = mvePlayer(pid, league);
+    if (!mv) return false;
+    const posStarters = lineup.starters.filter(s => s.pos === mv.pos);
+    const weakest = posStarters.length ? Math.min(...posStarters.map(s => s.neutral)) : 0;
+    return mv.neutral >= weakest * 0.85;
+  })();
+  return isStarter ? 'Starter' : isFringe ? 'Fringe' : 'Bench';
+}
+
 function mveLineupDelta(sideAId, sideBId, playersAGiving, playersBGiving, league) {
   const rosterA = league.rosterMap[sideAId];
   const rosterB = league.rosterMap[sideBId];
@@ -5367,6 +5562,68 @@ function mveTradePartnerScore(myProf, theirProf) {
   return { score: Math.min(100, score), reasons: reasons.slice(0,4), targetTypes: [...new Set(targetTypes)].slice(0,3) };
 }
 
+function mveTradeTargets(myRosterId, theirRosterId, league) {
+  const myProf    = mveTeamProfile(myRosterId, league);
+  const theirProf = mveTeamProfile(theirRosterId, league);
+  if (!myProf || !theirProf) return [];
+  const replLvl = mveReplacementLevels(league);
+
+  function needWeight(pos) {
+    const myBest = myProf.byPos[pos] && myProf.byPos[pos][0];
+    if (!myBest) return 38;
+    const repl = replLvl[pos] || 1;
+    const ratio = myBest.neutral / repl;
+    if (ratio <= 1.20) return Math.min(40, Math.round(35 + (1.20 - ratio) / 0.20 * 5));
+    if (ratio <= 1.50) return Math.round(20 + (1.50 - ratio) / 0.30 * 15);
+    if (ratio <= 2.00) return Math.round(5 + (2.00 - ratio) / 0.50 * 15);
+    return 5;
+  }
+
+  function surplusWeight(pos) {
+    const relevant = (theirProf.byPos[pos] || []).filter(p => p.tier <= 3).length;
+    if (relevant >= 3) return Math.min(25, Math.round(20 + (relevant - 3) * 2));
+    if (relevant >= 2) return 12;
+    if (relevant >= 1) return 5;
+    return 0;
+  }
+
+  const myClsLabel = myProf.classification.label;
+  const iAmContender = ['Contender', 'Fringe'].includes(myClsLabel);
+  const iAmRebuilder = myClsLabel.includes('Rebuild') || myClsLabel === 'Retool';
+
+  function offerSuggestion(player) {
+    const hasPicks = myProf.pickValue > 15000;
+    if (iAmContender) {
+      const base = `Offer: your ${player.pos} depth`;
+      return hasPicks ? base + ` + ${new Date().getFullYear() + 1} 1st` : base + ' + 2nd round pick';
+    }
+    if (iAmRebuilder) {
+      const vet = myProf.all.find(p => parseInt(p.age) >= 28 && p.tier <= 3 && p.pid !== player.pid);
+      return vet ? `Offer: ${vet.name} + pick` : 'Offer: veteran with remaining value';
+    }
+    return hasPicks ? `Offer: depth player + ${new Date().getFullYear() + 1} pick` : 'Offer: roster depth';
+  }
+
+  return theirProf.all
+    .filter(p => p.tier <= 4)
+    .map(p => {
+      const nw  = Math.min(40, Math.max(0, needWeight(p.pos)));
+      const sw  = Math.min(25, Math.max(0, surplusWeight(p.pos)));
+      const aw  = ({ Sell: 20, Shop: 15, Hold: 5 }[p.actionTag] || 0);
+      const acc = ({ 3: 15, 4: 10, 2: 8, 1: 3 }[p.tier] || 0);
+      const targetScore = Math.min(100, Math.round(nw + sw + aw + acc));
+      const reasons = [
+        nw >= 30 ? `fills your ${p.pos} weakness` : null,
+        sw >= 12 ? `on their ${p.pos} surplus` : null,
+        (p.actionTag === 'Sell' || p.actionTag === 'Shop') ? 'on their sell list' : null,
+      ].filter(Boolean).join(', ') || `${p.pos} acquisition target`;
+      return { player: p, targetScore, offerSuggestion: offerSuggestion(p), reason: reasons };
+    })
+    .filter(t => t.targetScore >= 20)
+    .sort((a, b) => b.targetScore - a.targetScore)
+    .slice(0, 3);
+}
+
 function renderTradePartners(myRosterId, profiles) {
   if (!myRosterId || !profiles || !profiles.length) return '';
   const myProf = profiles.find(p => p.rosterId === parseInt(myRosterId));
@@ -5378,6 +5635,9 @@ function renderTradePartners(myRosterId, profiles) {
     .slice(0, 3);
   if (!scored.length) return '';
 
+  const league = ld();
+  const actionTagColor = { Sell: 'var(--red)', Shop: 'var(--yellow)', Hold: 'var(--muted)', Buy: 'var(--green)', Speculative: 'var(--accent)' };
+
   let html = `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
     <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Best Trade Partners for ${myProf.teamName}</div>`;
   scored.forEach((p, i) => {
@@ -5385,6 +5645,35 @@ function renderTradePartners(myRosterId, profiles) {
     const targHtml = p.targetTypes.length
       ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${p.targetTypes.map(t=>`<span style="font-size:.62rem;background:rgba(88,166,255,.1);color:var(--accent);border-radius:3px;padding:1px 5px">${t}</span>`).join('')}</div>` : '';
     const rsns = p.reasons.slice(0,2).map(r=>`<div style="font-size:.67rem;color:var(--muted);margin-top:2px">· ${r}</div>`).join('');
+
+    // Trade targets for the #1 ranked partner
+    let targetsHtml = '';
+    if (i === 0 && league) {
+      const targets = mveTradeTargets(myRosterId, p.rosterId, league);
+      if (targets.length) {
+        targetsHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+          <div style="font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Target Players from ${p.teamName}</div>
+          ${targets.map(t => {
+            const atColor = actionTagColor[t.player.actionTag] || 'var(--muted)';
+            const barW = t.targetScore;
+            return `<div style="margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span class="pos-badge pos-${t.player.pos}" style="font-size:.6rem">${t.player.pos}</span>
+                <span style="font-size:.78rem;font-weight:600;color:var(--text);flex:1">${t.player.name}</span>
+                <span style="font-size:.6rem;background:rgba(0,0,0,.3);color:${atColor};border:1px solid ${atColor};border-radius:3px;padding:1px 5px">${t.player.actionTag}</span>
+                <span style="font-size:.7rem;color:var(--accent);font-weight:700">${t.targetScore}</span>
+              </div>
+              <div style="height:3px;background:var(--border);border-radius:2px;margin:3px 0">
+                <div style="height:3px;border-radius:2px;background:var(--accent);width:${barW}%"></div>
+              </div>
+              <div style="font-size:.63rem;color:var(--muted)">${t.reason}</div>
+              <div style="font-size:.62rem;color:var(--muted);font-style:italic;margin-top:1px">${t.offerSuggestion}</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+      }
+    }
+
     html += `<div class="partner-card">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:.7rem;font-weight:700;color:var(--muted);width:18px">#${i+1}</span>
@@ -5393,7 +5682,7 @@ function renderTradePartners(myRosterId, profiles) {
         <span style="font-size:.78rem;font-weight:700;color:var(--accent)">${p.score}</span>
       </div>
       <div class="partner-score-track"><div class="partner-score-fill" style="width:${p.score}%"></div></div>
-      ${rsns}${targHtml}
+      ${rsns}${targHtml}${targetsHtml}
     </div>`;
   });
   html += `</div>`;
