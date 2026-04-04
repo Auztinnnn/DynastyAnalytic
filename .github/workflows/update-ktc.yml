@@ -78,21 +78,20 @@ jobs:
           }
 
           // Normalise a player object to { sleeperId, playerName, value, sfValue }
-          // KTC field names vary; we accept several known aliases.
-          // KTC embeds SF value in oneQBValues/superflex sub-objects — hoist both.
+          // KTC window.playersArray nests 1QB and SF values under sub-objects.
+          // IMPORTANT: p.value (top-level) is the SF value — KTC defaults to SF on /dynasty-rankings.
+          // 1QB value lives in p.oneQBValues.value; SF value in p.superflexValues.value.
           function normalise(raw) {
             return raw.map(p => {
-              // KTC window.playersArray nests values under overallTier/superflexValues etc.
-              // Common shapes: p.value, p.sf_value, p.superflexValues?.value, p.oneQBValues?.value
-              const sfVal  = p.sf_value ?? p.superflexValues?.value ?? p.superflex?.value ?? p.sfValue ?? null;
-              const oneVal = p.value    ?? p.oneQBValues?.value     ?? p.oneqb?.value     ?? p.ktcValue ?? 0;
+              const sfVal  = p.superflexValues?.value ?? p.sf_value   ?? p.sfValue ?? p.value ?? 0;
+              const oneVal = p.oneQBValues?.value     ?? p.oneqb?.value ?? p.value ?? 0;
               return {
+                // spread first so our normalised fields below take precedence
+                ...p,
                 sleeperId:  p.sleeperId  ?? p.sleeper_id ?? p.sleeperID ?? null,
                 playerName: p.playerName ?? p.name       ?? p.player    ?? '',
-                value:      oneVal,
-                sfValue:    sfVal ?? oneVal,
-                // pass through everything else so the frontend can use original fields
-                ...p,
+                value:      oneVal,   // 1QB value
+                sfValue:    sfVal,    // superflex value
               };
             });
           }
