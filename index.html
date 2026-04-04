@@ -2404,6 +2404,57 @@ function computeStorylines(league) {
   if (completedWeeks.length < 3) return [];
   const teams = Object.values(rosterMap);
 
+  // Detect completed season: status === 'complete' or all regular-season weeks done
+  const isComplete = league.league.status === 'complete';
+
+  // ── COMPLETED SEASON: end-of-year recap storylines ────────────
+  if (isComplete && playoffsLoaded && S.playoffData) {
+    const seasonId = league.id;
+    const pd = S.playoffData[seasonId];
+    const stories = [];
+
+    if (pd && pd.bracket && pd.maxRound) {
+      const champMatch = pd.bracket.find(b => b.p === 1 && b.w)
+        || pd.bracket.find(b => b.r === pd.maxRound && b.m === 1 && b.w);
+      const rm = pd.rosterMap;
+      if (champMatch && champMatch.w) {
+        const champ = rm[champMatch.w];
+        const runer = rm[champMatch.l];
+        if (champ) stories.push({icon:'🏆', text:`<strong>${champ.teamName}</strong> won the ${league.league.season} championship`});
+        if (runer && stories.length < 3) stories.push({icon:'🥈', text:`<strong>${runer.teamName}</strong> finished as runner-up`});
+      }
+    }
+
+    // Regular-season best record
+    const wins = {}, pts = {};
+    teams.forEach(t => { wins[t.rosterId] = 0; pts[t.rosterId] = 0; });
+    completedWeeks.forEach(({data}) => {
+      const pairs = {};
+      data.forEach(t => { if(t.matchup_id){if(!pairs[t.matchup_id])pairs[t.matchup_id]=[];pairs[t.matchup_id].push(t);} });
+      Object.values(pairs).forEach(pair => {
+        if(pair.length!==2) return;
+        const [a,b]=pair; const aW=(a.points||0)>(b.points||0);
+        if(wins[a.roster_id]!==undefined){ wins[a.roster_id]+=aW?1:0; pts[a.roster_id]+=a.points||0; }
+        if(wins[b.roster_id]!==undefined){ wins[b.roster_id]+=aW?0:1; pts[b.roster_id]+=b.points||0; }
+      });
+    });
+    const sorted = [...teams].sort((a,b) => wins[b.rosterId]!==wins[a.rosterId] ? wins[b.rosterId]-wins[a.rosterId] : pts[b.rosterId]-pts[a.rosterId]);
+    const top = sorted[0];
+    const totalWeeks = completedWeeks.length;
+    if (top && stories.length < 3) {
+      stories.push({icon:'📋', text:`<strong>${top.teamName}</strong> had the best regular-season record — ${wins[top.rosterId]}–${totalWeeks - wins[top.rosterId]}`});
+    }
+    // Top scorer
+    const topScorer = [...teams].sort((a,b) => pts[b.rosterId]-pts[a.rosterId])[0];
+    if (topScorer && topScorer.rosterId !== top?.rosterId && stories.length < 3) {
+      stories.push({icon:'💯', text:`<strong>${topScorer.teamName}</strong> scored the most total points — ${fmtP(pts[topScorer.rosterId])} pts`});
+    }
+
+    if (stories.length) return stories.slice(0,3);
+  }
+
+  // ── IN-SEASON: weekly narrative storylines ────────────────────
+
   // Build per-team weekly results
   const weekResults = {};
   teams.forEach(t => { weekResults[t.rosterId] = []; });
@@ -2464,20 +2515,20 @@ function computeStorylines(league) {
 
   const movements = teams.map(t => ({
     teamName:t.teamName,
-    move: thenRank[t.rosterId] - nowRank[t.rosterId], // positive = climbed (was lower rank number before)
+    move: thenRank[t.rosterId] - nowRank[t.rosterId],
   }));
   const climber = movements.filter(m=>m.move>=3).sort((a,b)=>b.move-a.move)[0];
   const faller  = movements.filter(m=>m.move<=-3).sort((a,b)=>a.move-b.move)[0];
   if (climber && !hotTeam)  stories.push({icon:'📈', text:`<strong>${climber.teamName}</strong> has climbed ${climber.move} spots in the standings over the last 3 weeks`});
   if (faller  && !coldTeam) stories.push({icon:'🧊', text:`<strong>${faller.teamName}</strong> has dropped ${Math.abs(faller.move)} spots in the standings over the last 3 weeks`});
 
-  // Contender tier parity / rebuild wave
+  // Contender tier parity / rebuild wave — only meaningful in-season
   if (S.fcValues.length) {
     const rawProfs = teams.map(t => mveTeamProfile(t.rosterId,league)).filter(Boolean);
     const profiles = mveClassifyTeams(rawProfs);
     const contenders = profiles.filter(p=>p.classification.label==='Contender');
     const rebuilds   = profiles.filter(p=>p.classification.label.includes('Rebuild'));
-    if (contenders.length >= 3) stories.push({icon:'⚔️', text:`<strong>${contenders.length} teams</strong> are classified as Contenders — the title race is wide open`});
+    if (contenders.length >= 3 && stories.length < 3) stories.push({icon:'⚔️', text:`<strong>${contenders.length} teams</strong> are classified as Contenders — the title race is wide open`});
     else if (rebuilds.length >= 3 && stories.length < 2) stories.push({icon:'🏗️', text:`<strong>${rebuilds.length} teams</strong> are in full rebuild mode — a youth movement is underway`});
   }
 
