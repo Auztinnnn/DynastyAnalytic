@@ -2217,6 +2217,208 @@ function pickRoundColor(round) {
   return { 1:'#d29922', 2:'#8b949e', 3:'#b46f2e', 4:'#6b7280' }[parseInt(round)] || '#6b7280';
 }
 
+// ── BOARD-DRIVEN ROOKIE PICK VALUATION ────────────────────────
+// Class-year sentiment profiles for future picks (no board exists yet)
+const ROOKIE_CLASS_PROFILES = {
+  2025: { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 },
+  2026: { topEndStrength: 1.04, depthStrength: 1.01, overallStrength: 1.02 },
+  2027: { topEndStrength: 1.06, depthStrength: 1.02, overallStrength: 1.04 },
+  2028: { topEndStrength: 1.05, depthStrength: 1.02, overallStrength: 1.03 },
+};
+const _RCLASS_DEFAULT = { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 };
+
+// Cached rookie board slots (keyed by S.fcValues.length for cheap invalidation)
+let _rbCache = null, _rbCacheLen = -1;
+function getRookieBoardSlots() {
+  if (_rbCache && _rbCacheLen === S.fcValues.length) return _rbCache;
+  _rbCache = S.fcValues
+    .filter(fc => fc.player && ['QB','RB','WR','TE'].includes(fc.player.position)
+      && fc.player.years_exp === 0 && (fc.value || 0) > 0)
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 36)
+    .map((fc, i) => ({
+      index: i,
+      round: i < 12 ? 1 : i < 24 ? 2 : 3,
+      slotNum: i < 12 ? i + 1 : i < 24 ? i - 11 : i - 23,
+      slot: i < 12 ? `1.${String(i+1).padStart(2,'0')}`
+          : i < 24 ? `2.${String(i-11).padStart(2,'0')}`
+          : `3.${String(i-23).padStart(2,'0')}`,
+      value: fc.value, pid: fc.player && fc.player.sleeperId, fc,
+    }));
+  _rbCacheLen = S.fcValues.length;
+  return _rbCache;
+}
+
+// Detect value tier cliffs in the first-round portion of the board.
+// A cliff is a slot-to-slot drop of 8%+ (material tier break).
+function detectRookieTierCliffs(boardSlots) {
+  const r1 = boardSlots.filter(s => s.round === 1);
+  const cliffs = [];
+  for (let i = 0; i < r1.length - 1; i++) {
+    const a = r1[i].value, b = r1[i + 1] && r1[i + 1].value;
+    if (!a || !b) continue;
+    const pct = (a - b) / a;
+    if (pct >= 0.08) cliffs.push({
+      afterSlotNum: i + 1,   // 1-based slot number of the last pick before the cliff
+      afterSlot: r1[i].slot,
+      pctDrop: pct,
+      cliffSeverity: pct >= 0.18 ? 'major' : pct >= 0.12 ? 'moderate' : 'minor',
+    });
+  }
+  return cliffs.sort((a, b) => b.pctDrop - a.pctDrop);
+}
+
+// Slot probability distribution for a given Early/Mid/Late bucket within a league
+function _slotDist(bucket, confidence, n) {
+  n = n || 12;
+  const ea = Math.ceil(n / 3);          // top of early zone  (slots 1–4 for n=12)
+  const ls = n - Math.floor(n / 3) + 1; // start of late zone (slots 9–12 for n=12)
+  let slots, weights;
+  if (bucket === 'Early') {
+    slots = Array.from({ length: ea }, (_, i) => i + 1);
+    const sp = confidence === 'high' ? 1.8 : confidence === 'medium' ? 1.4 : 1.0;
+    weights = slots.map((_, i) => Math.pow(sp, slots.length - i)); // heavier toward slot 1
+  } else if (bucket === 'Late') {
+    slots = Array.from({ length: n - ls + 1 }, (_, i) => ls + i);
+    const sp = confidence === 'high' ? 1.6 : confidence === 'medium' ? 1.3 : 1.0;
+    weights = slots.map((_, i) => Math.pow(sp, i + 1)); // heavier toward last slot
+  } else {
+    slots = Array.from({ length: Math.max(1, ls - ea - 1) }, (_, i) => ea + 1 + i);
+    if (!slots.length) slots = [Math.ceil(n / 2)];
+    weights = slots.map(() => 1); // uniform for mid
+  }
+  const total = weights.reduce((s, w) => s + w, 0) || 1;
+  return slots.map((s, i) => ({ slotNum: s, prob: weights[i] / total }));
+}
+
+// Core board-driven value computation (no league context needed).
+// Applies neighbor smoothing, optionality premium, and cliff premium.
+function _boardPickValue(bucket, confidence, boardSlots, n) {
+  const r1 = boardSlots.filter(s => s.round === 1);
+  if (r1.length < 4) return null;
+  const dist = _slotDist(bucket, confidence, n);
+  const cliffs = detectRookieTierCliffs(boardSlots);
+
+  // Weighted expected value with 3-slot neighbor smoothing: 65/15/20
+  let rawValue = 0;
+  dist.forEach(({ slotNum, prob }) => {
+    const s = r1[slotNum - 1]; if (!s) return;
+    const prev = r1[slotNum - 2], next = r1[slotNum]; // prev = slotNum-1, next = slotNum+1
+    const smoothed = s.value * 0.65
+      + (prev ? prev.value : s.value) * 0.15
+      + (next ? next.value : s.value) * 0.20;
+    rawValue += prob * smoothed;
+  });
+  const boardValue = Math.round(rawValue);
+
+  // Optionality premium: lower when pick is nearly locked to one elite player
+  const topProb = dist.length ? Math.max(...dist.map(d => d.prob)) : 0;
+  const optPct = topProb > 0.70 ? 0.03 : topProb > 0.50 ? 0.05 : 0.07;
+
+  // Cliff premium: pick accesses zone containing or ending at a tier cliff
+  let cliffPct = 0, cliffNote = '';
+  const likelys = dist.filter(d => d.prob >= 0.15).map(d => d.slotNum);
+  if (likelys.length) {
+    const minS = Math.min(...likelys), maxS = Math.max(...likelys);
+    const cliff = cliffs.find(c => c.afterSlotNum >= minS && c.afterSlotNum <= maxS);
+    if (cliff) {
+      cliffPct = cliff.cliffSeverity === 'major' ? 0.07 : cliff.cliffSeverity === 'moderate' ? 0.05 : 0.03;
+      cliffNote = `Cliff after ${cliff.afterSlot}`;
+    }
+  }
+
+  // Tier label: how many major cliffs fall before this pick's expected slot range?
+  let tierLabel = '';
+  const majorCliffs = cliffs.filter(c => c.cliffSeverity !== 'minor').sort((a, b) => a.afterSlotNum - b.afterSlotNum);
+  if (majorCliffs.length && dist.length) {
+    const minSlot = Math.min(...dist.map(d => d.slotNum));
+    const tierIdx = majorCliffs.filter(c => c.afterSlotNum < minSlot).length + 1;
+    if (tierIdx <= 4) tierLabel = `Tier ${tierIdx}`;
+  }
+
+  const totalMult = Math.min(1 + optPct + cliffPct, 1.18); // cap total premium
+  return {
+    boardValue, neutralValue: Math.round(boardValue * totalMult),
+    optionalityPremiumPct: optPct, cliffPremiumPct: cliffPct,
+    tierLabel, cliffNote, source: 'board-driven',
+    notes: [tierLabel, cliffNote].filter(Boolean),
+  };
+}
+
+// Small demand/tag modifier (UI display only — added on top in getPickContext)
+function _tagMod(actionTag) {
+  return { Cornerstone: 0.05, Buy: 0.03, Hold: 0, Shop: 0.01, Sell: -0.01 }[actionTag] || 0;
+}
+
+// Full pick context with rich metadata. Used for trade calculator UI rendering.
+// Returns { neutralValue, source, notes, ... } — always a safe object.
+function getPickContext(pickKey, league) {
+  const pts = pickKey.split('_');
+  if (pts.length < 3) return { neutralValue: 0, source: 'error', notes: [] };
+  const season = String(pts[0]), round = parseInt(pts[1]);
+
+  // Non-1st rounds: flat value, no board logic
+  if (round !== 1) {
+    return { neutralValue: getPickValue(season, round, null), round, season, source: 'flat', notes: [] };
+  }
+
+  const bkt = getPickBucketForKey(pickKey);
+  const bucket = (bkt && bkt.bucket) || 'Mid';
+  const conf   = (bkt && bkt.confidence) || 'low';
+  const curYear = new Date().getFullYear();
+  const yearGap = Math.max(0, parseInt(season) - curYear);
+  const n = league ? Object.keys(league.rosterMap).length : 12;
+
+  // Current-year: board-driven valuation
+  if (parseInt(season) === curYear) {
+    const slots = getRookieBoardSlots();
+    const base = slots.length >= 6 ? _boardPickValue(bucket, conf, slots, n) : null;
+    if (base && base.neutralValue > 100) {
+      // Add tag modifier from likely rookies in the expected zone (small, display-only signal)
+      let tagMod = 0;
+      if (league) {
+        const dist = _slotDist(bucket, conf, n);
+        const r1 = slots.filter(x => x.round === 1);
+        dist.forEach(({ slotNum, prob }) => {
+          const s = r1[slotNum - 1];
+          if (!s || !s.pid) return;
+          const mv = mvePlayer(s.pid, league);
+          if (mv) tagMod += prob * _tagMod(mv.actionTag);
+        });
+        tagMod = Math.max(-0.03, Math.min(0.05, tagMod));
+      }
+      const finalValue = tagMod >= 0.005 || tagMod <= -0.005
+        ? Math.round(base.neutralValue * (1 + tagMod)) : base.neutralValue;
+      return { ...base, neutralValue: finalValue, tagModPct: tagMod || 0, round, season, bucket, confidence: conf };
+    }
+  }
+
+  // Future year (or current-year with empty board): class-sentiment model
+  const cp = ROOKIE_CLASS_PROFILES[parseInt(season)] || _RCLASS_DEFAULT;
+  const years = Object.keys(S.fcPickValues).sort();
+  let fcBase = 0;
+  if (years.length) {
+    const pv = S.fcPickValues[years[years.length - 1]];
+    if (pv && pv[1]) {
+      fcBase = bucket === 'Early' && pv[1].early > 0 ? pv[1].early
+             : bucket === 'Late'  && pv[1].late  > 0 ? pv[1].late
+             : pv[1].mid || pv[1].avg || 0;
+    }
+  }
+  if (!fcBase) { const fb = PICK_FALLBACK[1]; fcBase = bucket === 'Early' ? fb.early : bucket === 'Late' ? fb.late : fb.mid; }
+
+  const gapDecay      = Math.pow(0.85, Math.max(yearGap, 0));
+  const sentMult      = bucket === 'Early' ? cp.topEndStrength : bucket === 'Late' ? cp.depthStrength : cp.overallStrength;
+  const uDiscount     = yearGap <= 0 ? 0 : conf === 'high' ? 0.04 : conf === 'medium' ? 0.06 : 0.09;
+  const neutralValue  = Math.round(fcBase * gapDecay * sentMult * (1 - uDiscount));
+  return {
+    neutralValue, source: 'class-sentiment', round, season, bucket, confidence: conf,
+    classStrengthPct: Math.round((sentMult - 1) * 100),
+    uncertaintyDiscountPct: Math.round(uDiscount * 100),
+    notes: [],
+  };
+}
+
 // ── COMPUTATIONS ──────────────────────────────────────────────
 function ld() { return S.leagues[S.currentLeagueId]; }
 function rName(id) { const r = ld() && ld().rosterMap[id]; return r ? r.teamName : 'Team '+id; }
@@ -3932,7 +4134,7 @@ function renderTradeCalculator() {
   const hasPicks = Object.keys(S.pickOwnership).length > 0;
   const teams=Object.values(league.rosterMap).sort((a,b)=>a.teamName.localeCompare(b.teamName));
   const opts=teams.map(t=>`<option value="${t.rosterId}">${t.teamName}</option>`).join('');
-  const valueNote = `FantasyCalc${S.ktcAvailable ? ' + KTC' : ''}${hasPicks && Object.keys(S.fcPickValues).length ? ' · Picks: FC RDP' : hasPicks ? ' · Picks: tier defaults' : ''}`;
+  const valueNote = `FantasyCalc${S.ktcAvailable ? ' + KTC' : ''}${hasPicks && Object.keys(S.fcPickValues).length ? (getRookieBoardSlots().length >= 6 ? ' · Picks: Board-driven' : ' · Picks: FC RDP') : hasPicks ? ' · Picks: tier defaults' : ''}`;
 
   document.getElementById('trade-content').innerHTML=`
     <div style="font-size:.7rem;color:var(--muted);margin-bottom:10px;text-align:right">${valueNote}</div>
@@ -4048,18 +4250,36 @@ function drawRoster(side, rosterId) {
       const bkt    = p.round === 1 && S.fcValues.length
         ? applyFutureGap(leagueBuckets[String(p.originalOwner)], p.season)
         : null;
-      const val    = getPickValue(p.season, p.round, bkt && bkt.bucket);
       const rColor = pickRoundColor(p.round);
       const rdLabel= ['','1','2','3','4'][p.round] || p.round;
       const name   = pickDisplayName(p);
       const bktBadge = bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '';
       const srcNote  = bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
         ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">Proj</span>` : '';
+      // Rich context for 1st-round picks
+      const ctx = p.round === 1 ? getPickContext(p.key, league) : null;
+      const val = ctx ? ctx.neutralValue : getPickValue(p.season, p.round, bkt && bkt.bucket);
+      // Context subtitle line
+      let ctxSubHtml = '';
+      if (ctx && p.round === 1) {
+        const parts = [];
+        if (ctx.source === 'board-driven') {
+          if (ctx.tierLabel) parts.push(ctx.tierLabel);
+          if (ctx.optionalityPremiumPct > 0.02) parts.push(`+${Math.round(ctx.optionalityPremiumPct * 100)}% opt`);
+          if (ctx.cliffPremiumPct > 0) parts.push(`+${Math.round(ctx.cliffPremiumPct * 100)}% cliff`);
+          if (ctx.tagModPct > 0.01) parts.push(`+${Math.round(ctx.tagModPct * 100)}% demand`);
+        } else if (ctx.source === 'class-sentiment') {
+          if (ctx.classStrengthPct) parts.push(`${ctx.classStrengthPct >= 0 ? '+' : ''}${ctx.classStrengthPct}% ${p.season} class`);
+          if (ctx.uncertaintyDiscountPct) parts.push(`-${ctx.uncertaintyDiscountPct}% uncertainty`);
+        }
+        if (parts.length) ctxSubHtml = `<div class="trade-v2-pname-sub" style="font-size:.58rem;color:var(--muted);margin-top:1px">${parts.join(' · ')}</div>`;
+      }
       return `<div class="trade-v2-row ${sel?'selected':''}" onclick="togglePick('${side}','${p.key}')">
         <div class="trade-v2-cb">&#x2713;</div>
         <span class="pick-badge" style="background:${hexA(rColor,.13)};color:${rColor};width:20px;height:20px;font-size:.62rem">${rdLabel}</span>
         <div class="trade-v2-pname">
           <div class="trade-v2-pname-main" style="display:flex;align-items:center;gap:4px">${name}${bktBadge}${srcNote}</div>
+          ${ctxSubHtml}
         </div>
         <span class="trade-v2-val" style="color:var(--yellow)">${val > 0 ? val.toLocaleString() : '—'}</span>
       </div>`;
@@ -4131,8 +4351,23 @@ function getPickBucketForKey(key) {
 
 function getPickValueByKey(key) {
   const pts = key.split('_');
+  const round = parseInt(pts[1]);
+  // 1st-round current-year: use board-driven value when board is populated
+  if (round === 1) {
+    const season = pts[0], curYear = new Date().getFullYear();
+    if (parseInt(season) === curYear) {
+      const slots = getRookieBoardSlots();
+      if (slots.length >= 6) {
+        const league = ld();
+        const n = league ? Object.keys(league.rosterMap).length : 12;
+        const bkt = getPickBucketForKey(key);
+        const bv = _boardPickValue((bkt && bkt.bucket) || 'Mid', (bkt && bkt.confidence) || 'low', slots, n);
+        if (bv && bv.neutralValue > 100) return bv.neutralValue;
+      }
+    }
+  }
   const bkt = getPickBucketForKey(key);
-  return getPickValue(pts[0], parseInt(pts[1]), bkt && bkt.bucket);
+  return getPickValue(pts[0], round, bkt && bkt.bucket);
 }
 
 
@@ -4600,10 +4835,15 @@ function updateProposal() {
   const hasBucketedPicks = [...S.tradeA.picks, ...S.tradeB.picks].some(k => {
     const bkt = getPickBucketForKey(k); return bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid';
   });
+  const _curYr = new Date().getFullYear();
+  const hasBoardPicks = pickCount > 0 && getRookieBoardSlots().length >= 6 &&
+    [...S.tradeA.picks, ...S.tradeB.picks].some(k => parseInt(k.split('_')[0]) === _curYr && parseInt(k.split('_')[1]) === 1);
   const pickSrcNote = pickCount > 0
-    ? `<div class="picks-source-note">Pick values: ${Object.keys(S.fcPickValues).length > 0
-        ? hasBucketedPicks ? 'FC RDP · 1st-round buckets projected from team strength' : 'FC RDP (mid estimate)'
-        : 'tier defaults'}</div>` : '';
+    ? `<div class="picks-source-note">Pick values: ${hasBoardPicks
+        ? 'Rookie Board · tier-weighted + optionality'
+        : Object.keys(S.fcPickValues).length > 0
+          ? hasBucketedPicks ? 'FC RDP · 1st-round buckets from team strength' : 'FC RDP (mid estimate)'
+          : 'tier defaults'}</div>` : '';
 
   // ── Compact MVE insights ──────────────────────────────────────
   let insightHtml = '';
