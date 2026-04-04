@@ -5965,15 +5965,9 @@ function renderFranchiseIntel() {
     const top3 = prof.all.slice().sort((a,b)=>b.neutral-a.neutral).slice(0,3);
     const csList = top3.map(p=>{
       const sf = mveStarterFlag(p.pid, prof.rosterId, league);
-      const sfBadge = sf === 'Starter'
-        ? `<span style="background:rgba(63,185,80,.15);color:var(--green);font-size:.58rem;padding:1px 5px;border-radius:3px;flex-shrink:0">Starter</span>`
-        : sf === 'Fringe'
-        ? `<span style="background:rgba(210,153,34,.15);color:var(--yellow);font-size:.58rem;padding:1px 5px;border-radius:3px;flex-shrink:0">Fringe</span>`
-        : '';
       return `<div class="franchise-asset-row">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="franchise-asset-name">${p.name}</span>
-        ${sfBadge}
         <span class="franchise-asset-val">${p.neutral.toLocaleString()}</span>
       </div>`;
     }).join('');
