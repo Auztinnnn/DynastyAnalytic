@@ -4986,10 +4986,10 @@ function renderRookieBoard() {
   const league = ld();
   const curYear = new Date().getFullYear();
 
-  // Rookies = years_exp === 0, skill positions, positive value
+  // Rookies = years_exp === 0 or null/undefined (pre-draft prospects not yet assigned), skill positions, positive value
   const rookies = S.fcValues
     .filter(fc => fc.player && ['QB','RB','WR','TE'].includes(fc.player.position)
-      && fc.player.years_exp === 0 && (fc.value || 0) > 0)
+      && (fc.player.years_exp == null || fc.player.years_exp === 0) && (fc.value || 0) > 0)
     .sort((a, b) => (b.value || 0) - (a.value || 0));
 
   // 1.01 value: top rookie's FC value vs FC RDP Early 1st
@@ -5033,7 +5033,7 @@ function renderRookieBoard() {
     const slotColor = i === 0 ? '#f59e0b' : i < 4 ? '#d29922' : i < 12 ? '#8b949e' : 'var(--muted)';
     const pid = fc.player.sleeperId;
     const mv = league ? mvePlayer(pid, league) : null;
-    const ktcVal = S.ktcBySleeperId[String(pid)] ? S.ktcBySleeperId[String(pid)].value : null;
+    const ktcVal = S.ktcBySleeperId[String(pid)] || null;
     const tag = mv ? mv.actionTag : 'Speculative';
     const age = fc.player.age ? `${fc.player.age}` : '—';
     // Demand badge: how many teams need this position
