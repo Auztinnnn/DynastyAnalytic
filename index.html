@@ -867,7 +867,7 @@
     thead th:hover { color: var(--text); }
     tbody tr { border-bottom-color: rgba(30,45,66,.8); }
     tbody tr:hover { background: rgba(74,158,255,.05); }
-    tbody tr:first-child td:not(.week-high):not(.week-low) { color: var(--text); }
+    tbody tr:first-child td:not(.week-high):not(.week-low):not(.sv-hi):not(.sv-lo):not(.sv-bad):not(.sv-na) { color: var(--text); }
 
     /* ── Chart containers: better frame ──────────────────── */
     .chart-wrap {
@@ -2500,24 +2500,30 @@ function computeStorylines(league) {
   const isComplete = league.league.status === 'complete';
 
   // ── COMPLETED SEASON: end-of-year recap storylines ────────────
-  if (isComplete && playoffsLoaded && S.playoffData) {
-    const seasonId = league.id;
-    const pd = S.playoffData[seasonId];
+  if (isComplete) {
     const stories = [];
 
-    if (pd && pd.bracket && pd.maxRound) {
-      const champMatch = pd.bracket.find(b => b.p === 1 && b.w)
-        || pd.bracket.find(b => b.r === pd.maxRound && b.m === 1 && b.w);
-      const rm = pd.rosterMap;
-      if (champMatch && champMatch.w) {
-        const champ = rm[champMatch.w];
-        const runer = rm[champMatch.l];
-        if (champ) stories.push({icon:'🏆', text:`<strong>${champ.teamName}</strong> won the ${league.league.season} championship`});
-        if (runer && stories.length < 3) stories.push({icon:'🥈', text:`<strong>${runer.teamName}</strong> finished as runner-up`});
+    // Champion/runner-up require playoff data — trigger lazy load if needed
+    if (playoffsLoaded && S.playoffData) {
+      const seasonId = league.id;
+      const pd = S.playoffData[seasonId];
+      if (pd && pd.bracket && pd.maxRound) {
+        const champMatch = pd.bracket.find(b => b.p === 1 && b.w)
+          || pd.bracket.find(b => b.r === pd.maxRound && b.m === 1 && b.w);
+        const rm = pd.rosterMap;
+        if (champMatch && champMatch.w) {
+          const champ = rm[champMatch.w];
+          const runer = rm[champMatch.l];
+          if (champ) stories.push({icon:'🏆', text:`<strong>${champ.teamName}</strong> won the ${league.league.season} championship`});
+          if (runer && stories.length < 3) stories.push({icon:'🥈', text:`<strong>${runer.teamName}</strong> finished as runner-up`});
+        }
       }
+    } else if (!playoffsLoading) {
+      // Kick off background load; re-render overview once it resolves
+      loadPlayoffData().then(() => renderOverview());
     }
 
-    // Regular-season best record
+    // Regular-season record + top scorer — available immediately, no playoff data needed
     const wins = {}, pts = {};
     teams.forEach(t => { wins[t.rosterId] = 0; pts[t.rosterId] = 0; });
     completedWeeks.forEach(({data}) => {
@@ -2536,13 +2542,12 @@ function computeStorylines(league) {
     if (top && stories.length < 3) {
       stories.push({icon:'📋', text:`<strong>${top.teamName}</strong> had the best regular-season record — ${wins[top.rosterId]}–${totalWeeks - wins[top.rosterId]}`});
     }
-    // Top scorer
     const topScorer = [...teams].sort((a,b) => pts[b.rosterId]-pts[a.rosterId])[0];
     if (topScorer && topScorer.rosterId !== top?.rosterId && stories.length < 3) {
       stories.push({icon:'💯', text:`<strong>${topScorer.teamName}</strong> scored the most total points — ${fmtP(pts[topScorer.rosterId])} pts`});
     }
 
-    if (stories.length) return stories.slice(0,3);
+    if (stories.length) return stories.slice(0, 3);
   }
 
   // ── IN-SEASON: weekly narrative storylines ────────────────────
@@ -3475,16 +3480,11 @@ function renderPlayersTab() {
 
   const viewBtns = buildPlayersViewBtns();
 
-  const ktcNote = playersView === 'cards' && !S.ktcAvailable
-    ? `<div style="font-size:.68rem;color:var(--muted);margin-top:6px;font-style:italic">Timing signals require KTC \u2014 may not be available on file:// pages.</div>`
-    : '';
-
   document.getElementById('players-content').innerHTML = `
     <div class="players-controls" style="flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:6px">${viewBtns}</div>
       ${controls}
     </div>
-    ${ktcNote}
     <div id="players-grid" class="inline-loading"><div class="spinner" style="margin:0 auto 8px"></div>Loading...</div>`;
 
   if (playersView === 'cards') {
