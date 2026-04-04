@@ -280,10 +280,14 @@ jobs:
             try {
               const sleeperRes = await fetch('https://api.sleeper.app/v1/players/nfl');
               const sleeperPlayers = await sleeperRes.json();
+              // Normalize: lowercase, strip non-alphanumeric, collapse spaces,
+              // then strip generation suffixes (jr/sr/ii/iii/iv) so
+              // "Omar Cooper Jr." and "Omar Cooper" both normalize to "omar cooper".
               const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+              const normName = s => norm(s).replace(/\s+(jr|sr|ii|iii|iv|v)$/, '').trim();
               for (const [sid, sp] of Object.entries(sleeperPlayers)) {
                 if (!sp.full_name && !(sp.first_name && sp.last_name)) continue;
-                const fullName = norm(sp.full_name || `${sp.first_name} ${sp.last_name}`);
+                const fullName = normName(sp.full_name || `${sp.first_name} ${sp.last_name}`);
                 const pos = (sp.fantasy_positions?.[0] || sp.position || '').toUpperCase();
                 const key = `${fullName}|${pos}`;
                 // Prefer active/recent players if there are collisions
@@ -296,14 +300,14 @@ jobs:
             }
 
             // Attach sleeperId to each KTC player via name match
-            const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+            const normName = s => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim().replace(/\s+(jr|sr|ii|iii|iv|v)$/, '').trim();
             let matched = 0;
             for (const p of final) {
               if (p.sleeperId || p.sleeper_id || p.sleeperID) {
                 matched++;
                 continue; // already has one
               }
-              const name = norm(p.playerName || p.name || p.player || '');
+              const name = normName(p.playerName || p.name || p.player || '');
               const pos  = (p.position || p.pos || '').toUpperCase();
               const sid  = sleeperByKey[`${name}|${pos}`] || sleeperByName[name] || null;
               if (sid) { p.sleeperId = sid; matched++; }
