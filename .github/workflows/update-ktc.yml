@@ -110,11 +110,22 @@ jobs:
               } catch (_) {}
             });
 
+            // Wait for the histories endpoint specifically — set up BEFORE goto so we
+            // don't miss it. The ad networks keep firing forever so networkidle never
+            // settles; domcontentloaded + explicit waitForResponse is the right pattern.
+            const historiesPromise = page.waitForResponse(
+              resp => resp.url().includes('dynasty-rankings/histories') && resp.status() === 200,
+              { timeout: 30000 }
+            ).catch(() => null);
+
             console.log('Loading KTC dynasty rankings page...');
             await page.goto('https://keeptradecut.com/dynasty-rankings', {
-              waitUntil: 'networkidle',
-              timeout: 45000,
+              waitUntil: 'domcontentloaded',
+              timeout: 30000,
             });
+
+            // Give the histories XHR up to 30 s to arrive (it usually fires within ~2 s)
+            await historiesPromise;
 
             // ── Method 1: XHR intercept (already done above) ──────────
 
