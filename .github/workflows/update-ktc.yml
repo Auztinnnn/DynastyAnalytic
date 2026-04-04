@@ -14,38 +14,71 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch KTC values
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright + Chromium
         run: |
-          curl -sf \
-            -H "Accept: application/json" \
-            -H "User-Agent: Mozilla/5.0" \
-            --max-time 15 \
-            "https://keeptradecut.com/api/dynasty-rankings" \
-            -o raw_ktc.json
+          npm init -y
+          npm install playwright
+          npx playwright install chromium --with-deps
 
-      - name: Wrap with metadata
+      - name: Fetch KTC values via headless browser
         run: |
-          python3 - <<'EOF'
-          import json, datetime, sys
+          node - <<'EOF'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
 
-          with open('raw_ktc.json') as f:
-              raw = json.load(f)
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              locale: 'en-US',
+            });
+            const page = await context.newPage();
 
-          if not isinstance(raw, list):
-              print("Unexpected KTC response shape — aborting", file=sys.stderr)
-              sys.exit(1)
+            let captured = null;
 
-          snapshot = {
-              "source": "ktc-snapshot",
-              "fetchedAt": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "playerCount": len(raw),
-              "data": raw
-          }
+            // Intercept any response that looks like the player array
+            page.on('response', async response => {
+              const url = response.url();
+              if (captured) return;
+              if (!url.includes('keeptradecut.com')) return;
+              const ct = response.headers()['content-type'] || '';
+              if (!ct.includes('json')) return;
+              try {
+                const body = await response.json();
+                if (Array.isArray(body) && body.length > 50 && body[0].sleeperId !== undefined) {
+                  captured = body;
+                  console.log(`Captured ${body.length} players from ${url}`);
+                }
+              } catch (_) {}
+            });
 
-          with open('ktc-latest.json', 'w') as f:
-              json.dump(snapshot, f, separators=(',', ':'))
+            console.log('Loading KTC rankings page...');
+            await page.goto('https://keeptradecut.com/dynasty-rankings', {
+              waitUntil: 'networkidle',
+              timeout: 45000,
+            });
 
-          print(f"Wrote snapshot: {len(raw)} players")
+            await browser.close();
+
+            if (!captured || captured.length < 50) {
+              console.error('No valid KTC player array captured — aborting');
+              process.exit(1);
+            }
+
+            const snapshot = {
+              source: 'ktc-snapshot',
+              fetchedAt: new Date().toISOString(),
+              playerCount: captured.length,
+              data: captured,
+            };
+
+            fs.writeFileSync('ktc-latest.json', JSON.stringify(snapshot));
+            console.log(`Wrote ktc-latest.json: ${captured.length} players`);
+          })();
           EOF
 
       - name: Commit if changed
