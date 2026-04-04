@@ -1859,7 +1859,7 @@ async function loadChain(startId) {
     fetch(`${FC_BASE}?isDynasty=true&numQbs=${isSF?2:1}&ppr=${ppr}`).then(r => r.json()),
     fetch(`${BASE}/league/${S.currentLeagueId}/traded_picks`).then(r => r.ok ? r.json() : []).catch(() => []),
     // Try local snapshot first (same-origin, no CORS); fall back to live KTC
-    fetch('./ktc-latest.json', { signal: AbortSignal.timeout(2000) })
+    fetch('./ktc-latest.json', { signal: AbortSignal.timeout(2000), cache: 'no-cache' })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(snap => {
         if (snap && Array.isArray(snap.data)) return snap.data;   // snapshot format
@@ -2292,9 +2292,14 @@ function pickRoundColor(round) {
 // ── BOARD-DRIVEN ROOKIE PICK VALUATION ────────────────────────
 // Class-year sentiment profiles for future picks (no board exists yet)
 const ROOKIE_CLASS_PROFILES = {
+  // Strength multipliers per bucket: Early 1st → topEndStrength, Mid 1st → overallStrength, Late 1st → depthStrength
   2025: { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 },
-  2026: { topEndStrength: 1.04, depthStrength: 1.01, overallStrength: 1.02 },
-  2027: { topEndStrength: 1.06, depthStrength: 1.02, overallStrength: 1.04 },
+  // 2026: average overall class with 1 cornerstone prospect — top picks get a premium,
+  // but depth is below average so mid/late 1sts are discounted relative to a normal year
+  2026: { topEndStrength: 1.08, depthStrength: 0.97, overallStrength: 1.00 },
+  // 2027: strong class with multiple elite prospects — all buckets elevated,
+  // top picks most so (multiple cornerstones), meaningful depth as well
+  2027: { topEndStrength: 1.12, depthStrength: 1.06, overallStrength: 1.09 },
   2028: { topEndStrength: 1.05, depthStrength: 1.02, overallStrength: 1.03 },
 };
 const _RCLASS_DEFAULT = { topEndStrength: 1.00, depthStrength: 1.00, overallStrength: 1.00 };
@@ -5821,6 +5826,10 @@ function renderRookieBoard() {
     <div class="section-title" style="margin-bottom:6px">Rookie Board ${tip('Ranks all current-year rookies (years_exp=0) by FantasyCalc dynasty value. Pick slots are estimated by value rank until the fantasy draft completes — exact slots are shown with ✓. High Demand = 5+ teams weak at that position.')}</div>
     ${classBanner}
     ${valNote ? `<div style="font-size:.72rem;margin-bottom:10px;padding:6px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">${valNote}</div>` : ''}
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px;line-height:1.5">
+      <span style="color:var(--accent);font-weight:600">FC</span> — FantasyCalc dynasty consensus value, updated daily.&nbsp;&nbsp;
+      <span style="color:#a371f7;font-weight:600">KTC</span> — KeepTradeCut community trade market; reflects real-time sentiment and recent buzz.
+    </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px">
       <table style="width:100%;border-collapse:collapse">
         <thead>
