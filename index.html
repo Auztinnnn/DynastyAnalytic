@@ -4495,8 +4495,26 @@ function updateProposal() {
   const playerValB = S.tradeB.players.reduce((s,p)=>{ const fc=S.fcBySleeperId[String(p)]; return s+(fc?fc.value:0); }, 0);
   const pickValA = S.tradeA.picks.reduce((s,k)=>s+getPickValueByKey(k), 0);
   const pickValB = S.tradeB.picks.reduce((s,k)=>s+getPickValueByKey(k), 0);
+
+  // Archetype-weighted KTC blend for headline verdict
+  // final = FC + clamp((KTC − FC) × archetypeWeight, −cap·FC, +cap·FC)
+  const _TKW = { rookie:.22, yr12_WRQB:.22, yr12_RB:.15, prime_WR:.15, prime_QB:.12, prime_RB:.10, prime_TE:.15, vet_WR:.10, vet_RB:.07, vet_TE:.10, default:.15 };
+  const _TCAP = 0.15;
+  function _bpv(pid) {
+    const fc = S.fcBySleeperId[String(pid)];
+    if (!fc || !fc.value) return 0;
+    const base = fc.value;
+    if (!S.ktcAvailable) return base;
+    const kv = S.ktcBySleeperId[String(pid)] || 0;
+    if (!kv) return base;
+    const w = _TKW[mveArchetype(fc)] || _TKW.default;
+    const d = (kv - base) * w;
+    return Math.round(base + Math.max(-base * _TCAP, Math.min(base * _TCAP, d)));
+  }
+  const blendedA = S.tradeA.players.reduce((s,p) => s + _bpv(p), 0);
+  const blendedB = S.tradeB.players.reduce((s,p) => s + _bpv(p), 0);
   // vA = what Team A gives away; vB = what Team B gives away
-  const vA = playerValA + pickValA, vB = playerValB + pickValB;
+  const vA = blendedA + pickValA, vB = blendedB + pickValB;
   const hasAny = S.tradeA.players.length || S.tradeA.picks.length || S.tradeB.players.length || S.tradeB.picks.length;
 
   // ── Bar + pct display ────────────────────────────────────────
@@ -4592,14 +4610,22 @@ function updateProposal() {
     selRow.style.display = 'flex';
   }
 
-  // ── KTC divergence note ──────────────────────────────────────
+  // Market Sentiment note — always shown when KTC available, divergence warning only on contradiction
   let ktcNote = '';
   if (S.ktcAvailable && S.tradeA.players.length && S.tradeB.players.length) {
     const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
     const ktcB = S.tradeB.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
-    if (Math.sign(ktcA - ktcB) !== Math.sign(playerValA - playerValB) && Math.abs(ktcA - ktcB) > 500) {
-      ktcNote = `<div class="ktc-diverge-note">⚡ KTC sentiment differs from FC on this trade — verify before executing</div>`;
+    const ktcDiff = ktcA - ktcB;
+    let sentText;
+    if (Math.abs(ktcDiff) < 300) {
+      sentText = 'Market Sentiment: Roughly even (KTC)';
+    } else {
+      const ktcFavors = ktcDiff > 0 ? (rA ? rA.teamName : 'Team A') : (rB ? rB.teamName : 'Team B');
+      sentText = `Market Sentiment: Public leans ${ktcFavors} (KTC)`;
     }
+    const diverges = Math.sign(ktcDiff) !== Math.sign(playerValA - playerValB) && Math.abs(ktcDiff) > 500;
+    const warnHtml = diverges ? `<span style="color:var(--yellow);margin-left:5px">⚡ contradicts FC</span>` : '';
+    ktcNote = `<div style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:4px">${sentText}${warnHtml}</div>`;
   }
 
   // ── Pick source note ─────────────────────────────────────────
