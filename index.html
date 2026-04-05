@@ -2528,7 +2528,7 @@ function _boardPickValue(bucket, confidence, boardSlots, n) {
 
   // Optionality premium: lower when pick is nearly locked to one elite player
   const topProb = dist.length ? Math.max(...dist.map(d => d.prob)) : 0;
-  const optPct = topProb > 0.70 ? 0.03 : topProb > 0.50 ? 0.05 : 0.07;
+  const optPct = topProb > 0.70 ? 0.02 : topProb > 0.50 ? 0.03 : 0.04;
 
   // Cliff premium: pick accesses zone containing or ending at a tier cliff
   let cliffPct = 0, cliffNote = '';
@@ -2584,12 +2584,12 @@ function getPickContext(pickKey, league) {
   const yearGap = Math.max(0, parseInt(season) - curYear);
   const n = league ? Object.keys(league.rosterMap).length : 12;
 
-  // Current-year: board-driven valuation
+  // Current-year: board-driven valuation only — no class-sentiment overlay
   if (parseInt(season) === curYear) {
     const slots = getRookieBoardSlots();
     const base = slots.length >= 6 ? _boardPickValue(bucket, conf, slots, n) : null;
     if (base && base.neutralValue > 100) {
-      // Add tag modifier from likely rookies in the expected zone (small, display-only signal)
+      // Add tag modifier from likely rookies in the expected zone (small signal)
       let tagMod = 0;
       if (league) {
         const dist = _slotDist(bucket, conf, n);
@@ -2600,15 +2600,17 @@ function getPickContext(pickKey, league) {
           const mv = mvePlayer(s.pid, league);
           if (mv) tagMod += prob * _tagMod(mv.actionTag);
         });
-        tagMod = Math.max(-0.03, Math.min(0.05, tagMod));
+        tagMod = Math.max(-0.02, Math.min(0.02, tagMod));
       }
-      const finalValue = tagMod >= 0.005 || tagMod <= -0.005
+      const finalValue = Math.abs(tagMod) >= 0.005
         ? Math.round(base.neutralValue * (1 + tagMod)) : base.neutralValue;
       return { ...base, neutralValue: finalValue, tagModPct: tagMod || 0, round, season, bucket, confidence: conf };
     }
+    // Board not yet populated — return plain FC estimate, no class overlay
+    return { neutralValue: getPickValue(season, round, bucket), source: 'flat', round, season, notes: [] };
   }
 
-  // Future year (or current-year with empty board): class-sentiment model
+  // Future year only: class-sentiment model
   const cp = getClassProfile(season);
   const years = Object.keys(S.fcPickValues).sort();
   let fcBase = 0;
@@ -4477,27 +4479,11 @@ function drawRoster(side, rosterId) {
       const n   = Object.keys(league.rosterMap).length || 12;
       const val = knownSlot ? slotToPickValue(knownSlot, n, p.season)
         : ctx ? ctx.neutralValue : getPickValue(p.season, p.round, bkt && bkt.bucket);
-      // Context subtitle line
-      let ctxSubHtml = '';
-      if (ctx && p.round === 1) {
-        const parts = [];
-        if (ctx.source === 'board-driven') {
-          if (ctx.tierLabel) parts.push(ctx.tierLabel);
-          if (ctx.optionalityPremiumPct > 0.02) parts.push(`+${Math.round(ctx.optionalityPremiumPct * 100)}% opt`);
-          if (ctx.cliffPremiumPct > 0) parts.push(`+${Math.round(ctx.cliffPremiumPct * 100)}% cliff`);
-          if (ctx.tagModPct > 0.01) parts.push(`+${Math.round(ctx.tagModPct * 100)}% demand`);
-        } else if (ctx.source === 'class-sentiment') {
-          if (ctx.classStrengthPct) parts.push(`${ctx.classStrengthPct >= 0 ? '+' : ''}${ctx.classStrengthPct}% ${p.season} class`);
-          if (ctx.uncertaintyDiscountPct) parts.push(`-${ctx.uncertaintyDiscountPct}% uncertainty`);
-        }
-        if (parts.length) ctxSubHtml = `<div class="trade-v2-pname-sub" style="font-size:.58rem;color:var(--muted);margin-top:1px">${parts.join(' · ')}</div>`;
-      }
       return `<div class="trade-v2-row ${sel?'selected':''}" onclick="togglePick('${side}','${p.key}')">
         <div class="trade-v2-cb">&#x2713;</div>
         <span class="pick-badge" style="background:${hexA(rColor,.13)};color:${rColor};width:20px;height:20px;font-size:.62rem">${rdLabel}</span>
         <div class="trade-v2-pname">
           <div class="trade-v2-pname-main" style="display:flex;align-items:center;gap:4px">${name}${bktBadge}${srcNote}</div>
-          ${ctxSubHtml}
         </div>
         <span class="trade-v2-val" style="color:var(--yellow)">${val > 0 ? val.toLocaleString() : '—'}</span>
       </div>`;
@@ -5397,16 +5383,10 @@ function updateProposal() {
     const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
     const ktcB = S.tradeB.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
     const ktcDiff = ktcA - ktcB;
-    let sentText;
-    if (Math.abs(ktcDiff) < 300) {
-      sentText = 'Market Sentiment: Roughly even (KTC)';
-    } else {
-      const ktcFavors = ktcDiff > 0 ? (rA ? rA.teamName : 'Team A') : (rB ? rB.teamName : 'Team B');
-      sentText = `Market Sentiment: Public leans ${ktcFavors} (KTC)`;
-    }
-    const diverges = Math.sign(ktcDiff) !== Math.sign(playerValA - playerValB) && Math.abs(ktcDiff) > 500;
-    const warnHtml = diverges ? `<span style="color:var(--yellow);margin-left:5px">⚡ contradicts FC</span>` : '';
-    ktcNote = `<div style="font-size:.72rem;color:var(--muted)">${sentText}${warnHtml}</div>`;
+    const ktcFavors = Math.abs(ktcDiff) < 300 ? 'Even'
+      : ktcDiff > 0 ? (rA ? rA.teamName : 'Team A') : (rB ? rB.teamName : 'Team B');
+    const ktcLabel = Math.abs(ktcDiff) < 300 ? 'Market: Even' : `Market: Favors ${ktcFavors}`;
+    ktcNote = `<div style="font-size:.72rem;color:var(--muted)">${ktcLabel}</div>`;
   }
 
   // ── Pick source note ──────────────────────────────────────────
@@ -5424,70 +5404,43 @@ function updateProposal() {
           ? hasBucketedPicks ? 'FC RDP · 1st-round buckets from team strength' : 'FC RDP (mid estimate)'
           : 'tier defaults'}</div>` : '';
 
-  // ── Compact MVE insights ──────────────────────────────────────
-  let insightHtml = '';
+  // ── Lens divergence (Win-now / Dynasty) ──────────────────────
+  let lensHtml = '';
   if (S.fcValues.length > 0 && (S.tradeA.players.length || S.tradeB.players.length)) {
     function mveSide(pids) {
       return pids.reduce((acc, pid) => {
         const mv = mvePlayer(pid, league);
         return {
-          neutral:   acc.neutral   + (mv ? mv.neutral       : (S.fcBySleeperId[String(pid)]?.value||0)),
           contender: acc.contender + (mv ? mv.contenderValue : (S.fcBySleeperId[String(pid)]?.value||0)),
           rebuilder: acc.rebuilder + (mv ? mv.rebuilderValue : (S.fcBySleeperId[String(pid)]?.value||0)),
-          tiers: [...acc.tiers, mv ? mv.tier : 4],
         };
-      }, { neutral:0, contender:0, rebuilder:0, tiers:[] });
+      }, { contender:0, rebuilder:0 });
     }
     const mA = mveSide(S.tradeA.players);
     const mB = mveSide(S.tradeB.players);
-    mA.neutral += pickValA; mA.contender += pickValA; mA.rebuilder += pickValA;
-    mB.neutral += pickValB; mB.contender += pickValB; mB.rebuilder += pickValB;
+    mA.contender += pickValA; mA.rebuilder += pickValA;
+    mB.contender += pickValB; mB.rebuilder += pickValB;
 
-    // Lens divergence — A receives mB's value, B receives mA's value
     const mainAWins = vA > vB;
     const lensItems = [];
     const cA = mB.contender, cB = mA.contender;
     if ((cA > cB) !== mainAWins && Math.abs(cA - cB) > 300) {
-      const who = cA > cB ? (rA?.teamName || 'Team A') : (rB?.teamName || 'Team B');
-      lensItems.push(`Win-now: <strong>${who}</strong>`);
+      lensItems.push(`Win-now: <strong>${cA > cB ? (rA?.teamName||'Team A') : (rB?.teamName||'Team B')}</strong>`);
     }
     const rA2 = mB.rebuilder, rB2 = mA.rebuilder;
     if ((rA2 > rB2) !== mainAWins && Math.abs(rA2 - rB2) > 300) {
-      const who = rA2 > rB2 ? (rA?.teamName || 'Team A') : (rB?.teamName || 'Team B');
-      lensItems.push(`Dynasty: <strong>${who}</strong>`);
+      lensItems.push(`Dynasty: <strong>${rA2 > rB2 ? (rA?.teamName||'Team A') : (rB?.teamName||'Team B')}</strong>`);
     }
-    const lensHtml = lensItems.length
-      ? `<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">${lensItems.join(' &nbsp;·&nbsp; ')}</div>`
-      : '';
-
-    // Key Factors — call lineup delta only for explain context, don't render the full block
-    let lineupDelta = null;
-    if (S.tradeA.players.length || S.tradeB.players.length) {
-      lineupDelta = mveLineupDelta(S.tradeA.rosterId, S.tradeB.rosterId, S.tradeA.players, S.tradeB.players, league);
-    }
-    const tradeReasons = mveExplainTrade(S.tradeA, S.tradeB, mA, mB, lineupDelta, league);
-    const explainHtml = tradeReasons.length
-      ? `<div class="explain-chips" style="margin-bottom:4px">${tradeReasons.map(r=>`<span class="explain-chip">· ${r}</span>`).join('')}</div>`
-      : '';
-
-    insightHtml = lensHtml + explainHtml;
+    if (lensItems.length)
+      lensHtml = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">${lensItems.join(' &nbsp;·&nbsp; ')}</div>`;
   }
-
-  // ── Context advisory notes ─────────────────────────────────────
-  const ctxNotes = S.fcValues.length > 0 ? tradeContextNote(S.tradeA, S.tradeB, league) : [];
-  const ctxHtml = ctxNotes.map(note =>
-    `<div style="font-size:.73rem;color:var(--yellow);margin-top:5px;padding:5px 8px;background:rgba(210,153,34,.08);border-radius:6px;border-left:2px solid var(--yellow)">${note}</div>`
-  ).join('');
 
   // ── Inject into detail panel ───────────────────────────────────
   const detEl = document.getElementById('v2-detail');
   if (detEl) {
-    const noteBlock = ktcNote || pickSrcNote || ctxHtml
-      ? `<div style="margin-top:${insightHtml ? '8px' : '0'}">${ktcNote}${pickSrcNote}${ctxHtml}</div>`
-      : '';
-    const hasContent = insightHtml || noteBlock;
+    const hasContent = lensHtml || ktcNote;
     detEl.style.display = hasContent ? 'block' : 'none';
-    detEl.innerHTML = hasContent ? insightHtml + noteBlock : '';
+    detEl.innerHTML = hasContent ? lensHtml + ktcNote : '';
   }
 }
 
