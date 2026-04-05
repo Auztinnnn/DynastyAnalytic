@@ -6729,8 +6729,8 @@ const CLASS_STYLES = {
 // ── TUNING KNOBS for classification (adjust here) ─────────────
 const CLASS_THRESHOLDS = {
   // Absolute starter value thresholds (in FC points)
-  contenderSV:      44000,  // must exceed this for Contender consideration
-  fringeContSV:     33000,  // raised: Fringe requires genuine starter strength
+  contenderSV:      49000,  // must exceed this for Contender consideration
+  fringeContSV:     39000,  // Fringe requires genuine starter strength
   solidSV:          23000,  // floor for Productive Middle
   bottomFloorSV:    16000,  // below this → Rebuild regardless of anything else
   // Age gates
@@ -6743,14 +6743,15 @@ const CLASS_THRESHOLDS = {
   fringeMaxWeak:    2,
   // Elite player requirement for top tiers
   contenderMinElites: 2,    // Contender must have ≥2 T1/T2 players
+  fringeMinElites:    1,    // Fringe must have ≥1 T1/T2 player
   // Roster shape: if starterVal/totalVal < this, it's "depth without starters"
   fakeStrengthRatio: 0.45,
   // Pick capital thresholds
   bigPicksThreshold:  10000,
   lowPicksThreshold:   4000,
   // Distribution sanity caps — set high so all qualifying teams keep their earned label
-  maxTopTierFraction:   1.00,  // no cap on Contender + Fringe
-  maxContenderFraction: 1.00,  // no cap on true Contenders
+  maxTopTierFraction:   0.50,  // cap Contender + Fringe at top 50% of league
+  maxContenderFraction: 0.30,  // cap true Contenders at top 30% of league
 };
 
 // ── mveClassifyTeam: single-team fallback (no league context) ──
@@ -6780,7 +6781,7 @@ function mveClassifyTeam(starterVal, weightedAge, pickVal, byPos, totalVal) {
 
   // FRINGE CONTENDER: real starter value, age gate, no floor, no fake strength
   if (!isFloor && !fakeStrength &&
-      starterVal >= T.fringeContSV && weightedAge < T.fringeMaxAge && weakPos <= T.fringeMaxWeak)
+      starterVal >= T.fringeContSV && weightedAge < T.fringeMaxAge && weakPos <= T.fringeMaxWeak && numElites >= (T.fringeMinElites || 1))
     return { label:'Fringe',  window:'2–4 yr', ...CLASS_STYLES['Fringe'] };
 
   // INTENTIONAL REBUILD: young + picks accumulation + weak starters
@@ -6864,7 +6865,7 @@ function mveClassifyTeams(profiles) {
     }
     // FRINGE CONTENDER: real starter value + age gate + no floor + no fake (purely score-based)
     else if (!isFloor && !fakeStrength &&
-             sv >= T.fringeContSV && age < T.fringeMaxAge && weakPos <= T.fringeMaxWeak) {
+             sv >= T.fringeContSV && age < T.fringeMaxAge && weakPos <= T.fringeMaxWeak && numElites >= (T.fringeMinElites || 1)) {
       label = 'Fringe'; window_ = '2–4 yr';
     }
     // INTENTIONAL REBUILD: young + picks accumulation + not top half
@@ -7650,7 +7651,7 @@ function mveExplainPlayer(mv, league) {
   if (shallow && mv.tier <= 2)  reasons.push('Shallow-league elite premium');
   else if (shallow && mv.tier >= 4) reasons.push('Shallow-league depth discount');
 
-  if (mv.sentAdj && Math.abs(mv.sentAdj) > (mv.fcValue || 1) * 0.05)
+  if (mv.sentAdj && Math.abs(mv.sentAdj) > (mv.fcValue || 1) * 0.10)
     reasons.push(mv.sentAdj > 0 ? `KTC market premium (+${mv.sentAdj.toLocaleString()})` : `KTC market discount (${mv.sentAdj.toLocaleString()})`);
 
   if      (age <= 22) reasons.push('Young age curve boost (≤22)');
@@ -7683,7 +7684,7 @@ function mveWeeklySignal(mv, league) {
   const sentPct = mv.fcValue > 0 ? mv.sentAdj / mv.fcValue : 0;
   const isSellTag  = mv.actionTag === 'Sell' || mv.actionTag === 'Shop';
   const isBuyTag   = mv.actionTag === 'Buy'  || mv.actionTag === 'Speculative';
-  const sentRising  = sentPct >  0.08;
+  const sentRising  = sentPct >  0.15;
   const sentFalling = sentPct < -0.08;
 
   if (isSellTag && sentRising)
