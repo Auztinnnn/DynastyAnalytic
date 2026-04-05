@@ -7178,6 +7178,41 @@ function powerRankingVibe(rank, total, recentTrend, clsLabel) {
   return '😐 Treading Water';
 }
 
+// ── FRANCHISE RANKING ─────────────────────────────────────────
+let frSortCol = 'dynScore', frSortAsc = false;
+
+function frSort(col) {
+  frSortAsc = col === frSortCol ? !frSortAsc : false;
+  frSortCol = col;
+  renderFranchiseIntel();
+}
+
+function buildFranchiseRanking(profiles) {
+  if (!profiles || !profiles.length) return [];
+  const norm = (v, min, max) => max > min ? (v - min) / (max - min) * 100 : 50;
+  const svs  = profiles.map(p => p.starterValue);
+  const vars = profiles.map(p => p.totalVAR);
+  const ages = profiles.map(p => p.weightedAge);
+  const pks  = profiles.map(p => p.pickValue);
+  const svMin = Math.min(...svs),  svMax = Math.max(...svs);
+  const vaMin = Math.min(...vars), vaMax = Math.max(...vars);
+  const agMin = Math.min(...ages), agMax = Math.max(...ages);
+  const pkMin = Math.min(...pks),  pkMax = Math.max(...pks);
+  return profiles.map(p => {
+    const svScore   = norm(p.starterValue, svMin, svMax);
+    const varScore  = norm(p.totalVAR,     vaMin, vaMax);
+    const ageScore  = norm(agMax - p.weightedAge, 0, agMax - agMin); // younger = higher score
+    const pickScore = norm(p.pickValue,    pkMin, pkMax);
+    const dynScore  = Math.round((svScore * 0.45 + varScore * 0.25 + ageScore * 0.15 + pickScore * 0.15) * 10) / 10;
+    return { ...p, dynScore };
+  });
+}
+
+function scrollToFranchiseCard(rosterId) {
+  const el = document.getElementById('fc-card-' + rosterId);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // ── RENDER: FRANCHISE INTEL ───────────────────────────────────
 function renderFranchiseIntel() {
   const league = ld();
@@ -7204,10 +7239,80 @@ function renderFranchiseIntel() {
 
   const posColors = { QB:'#a371f7', RB:'#3fb950', WR:'#58a6ff', TE:'#fb8500' };
 
+  // ── Franchise Ranking Table ──────────────────────────────────
+  const rankingData = buildFranchiseRanking(profiles);
+  const frAscCols   = new Set(['weightedAge']);
+  const frSorted    = [...rankingData].sort((a, b) => {
+    const base = frSortCol === 'teamName'
+      ? a.teamName.localeCompare(b.teamName)
+      : (a[frSortCol] || 0) - (b[frSortCol] || 0);
+    const dir = frAscCols.has(frSortCol) ? 1 : -1;
+    return frSortAsc ? -dir * base : dir * base;
+  });
+  const FR_TIPS = {
+    dynScore:     'Composite dynasty score (0–100) weighted: Starter Val 45%, VAR 25%, Age youth bonus 15%, Pick Capital 15%. All metrics normalized within this league — 100 = best in league on that composite.',
+    starterValue: 'MVE value of only your projected starters. The most important single number for dynasty health.',
+    totalVAR:     'Value Above Replacement: how much your starters exceed replacement-level players at each position.',
+    weightedAge:  'Average roster age weighted by dynasty value. Lower = younger core / opening window.',
+    pickValue:    'Total dynasty value of future draft picks owned, per FantasyCalc RDP values.',
+  };
+  function frTh(col, label) {
+    const active = frSortCol === col;
+    const arrow  = active ? (frSortAsc ? '▲' : '▼') : '<span style="opacity:.3">↕</span>';
+    const tooltip = FR_TIPS[col] ? tip(FR_TIPS[col]) : '';
+    return `<th onclick="frSort('${col}')" style="text-align:right;white-space:nowrap;cursor:pointer${active?';color:var(--accent)':''}">${label}${tooltip} ${arrow}</th>`;
+  }
+
+  const frRankingRows = frSorted.map((p, i) => {
+    const rnk    = i + 1;
+    const rnkCls = rnk===1?'gold':rnk===2?'silver':rnk===3?'bronze':'';
+    const cl     = p.classification;
+    const av     = p.avatar
+      ? `<img class="hs" src="${AV_URL(p.avatar)}" onerror="this.style.display='none'" style="flex-shrink:0">`
+      : '';
+    const ageClass = p.weightedAge <= 25 ? 'age-young' : p.weightedAge >= 29.5 ? 'age-old' : 'age-mid';
+    return `<tr onclick="scrollToFranchiseCard(${p.rosterId})" style="cursor:pointer" title="Scroll to franchise card">
+      <td style="width:34px"><span class="rank-num ${rnkCls}">${rnk}</span></td>
+      <td style="min-width:160px"><div style="display:flex;align-items:center;gap:8px">
+        ${av}
+        <span style="font-weight:600">${p.teamName}</span>
+        <span class="tier-badge" style="background:${cl.bg};color:${cl.color};border:1px solid ${cl.border};font-size:.6rem;padding:2px 7px">${cl.label}</span>
+      </div></td>
+      <td style="text-align:right;font-weight:700;color:var(--accent)">${p.dynScore}</td>
+      <td style="text-align:right">${p.starterValue.toLocaleString()}</td>
+      <td style="text-align:right">${p.totalVAR.toLocaleString()}</td>
+      <td style="text-align:right" class="${ageClass}">${p.weightedAge}</td>
+      <td style="text-align:right;color:var(--yellow)">${p.pickValue.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+
   let html = `<div id="franchise-snapshot"><div class="section-title">Franchise Intelligence ${tip('Deep dynasty health cards for every team. Uses MVE (Multi-Variable Evaluation) — FantasyCalc values adjusted for age curve, player tier, role, positional scarcity, and KTC market sentiment. Tiers reflect absolute dynasty strength, not just rank in this league.')}
     <button class="capture-btn" onclick="captureById('franchise-snapshot',this)" title="Save franchise cards as image">📸 Share</button>
     <span class="section-note">MVE layered valuation · ${S.ktcAvailable?'FantasyCalc + KTC overlay':'FantasyCalc only'}</span>
-  </div><div class="franchise-grid" id="franchise-grid">`;
+  </div>
+
+  <div class="section" style="margin-bottom:24px">
+    <div class="section-title" style="font-size:.85rem;margin-bottom:10px">
+      Dynasty Rankings ${tip('Summary ranking of all franchises using a composite Dynasty Score. Click any row to scroll to that team\'s franchise card. Click column headers to re-sort.')}
+      <span class="section-note">Click row → jump to card · click header → sort</span>
+    </div>
+    <div class="table-wrap" style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th style="width:34px">#</th>
+          <th style="text-align:left">Team</th>
+          ${frTh('dynScore',     'Score')}
+          ${frTh('starterValue', 'Starter Val')}
+          ${frTh('totalVAR',     'VAR')}
+          ${frTh('weightedAge',  'Wtd Age')}
+          ${frTh('pickValue',    'Pick Cap')}
+        </tr></thead>
+        <tbody>${frRankingRows}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="franchise-grid" id="franchise-grid">`;
 
   profiles.forEach(prof => {
     const cl = prof.classification;
