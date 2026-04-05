@@ -1858,7 +1858,7 @@ async function loadChain(startId) {
   const ppr   = rec >= 1 ? 1 : rec >= 0.5 ? 0.5 : 0;
 
   const [fcRes, tradedPicksRes, ktcRes] = await Promise.allSettled([
-    fetch(`${FC_BASE}?isDynasty=true&numQbs=${isSF?2:1}&ppr=${ppr}`).then(r => r.json()),
+    fetch(`${FC_BASE}?isDynasty=true&numQbs=${isSF?2:1}&ppr=${ppr}`, { signal: AbortSignal.timeout(15000) }).then(r => r.json()),
     fetch(`${BASE}/league/${S.currentLeagueId}/traded_picks`).then(r => r.ok ? r.json() : []).catch(() => []),
     // Try local snapshot first (same-origin, no CORS); fall back to live KTC
     fetch(`./ktc-latest.json?d=${new Date().toISOString().slice(0,10)}`, { signal: AbortSignal.timeout(2000) })
@@ -1953,7 +1953,7 @@ async function loadChain(startId) {
     const lg = S.leagues[S.currentLeagueId];
     const isDraftDone = lg.league.status !== 'pre_draft';
     const draftSeason = String(parseInt(lg.season) + (isDraftDone ? 1 : 0));
-    const upcomingDrafts = await fetch(`${BASE}/league/${S.currentLeagueId}/drafts`)
+    const upcomingDrafts = await fetch(`${BASE}/league/${S.currentLeagueId}/drafts`, { signal: AbortSignal.timeout(8000) })
       .then(r => r.ok ? r.json() : []).catch(() => []);
     const upcoming = (upcomingDrafts || []).find(d =>
       String(d.season) === draftSeason &&
