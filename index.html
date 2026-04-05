@@ -4903,12 +4903,14 @@ function generateTradeProposal() {
   const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
   const TOLERANCE = 0.14; // within 14% = balanced
 
-  // Weak positions for each team (tier 3+ starter OR fewer than 2 solid options)
+  // Weak positions: no solid starter, OR depth shortage for multi-start positions
+  // QB/TE start 1 → need 1 solid. RB/WR start 2 → need 2 solid for depth.
+  const POS_DEPTH_MIN = { QB: 1, RB: 2, WR: 2, TE: 1 };
   function weakPositions(prof) {
     return ['QB','RB','WR','TE'].filter(pos => {
       const arr = prof.byPos[pos] || [];
       if (!arr.length || arr[0].tier >= 3) return true;
-      return arr.filter(p => p.tier <= 3).length < 2; // depth shortage
+      return arr.filter(p => p.tier <= 3).length < (POS_DEPTH_MIN[pos] || 1);
     });
   }
   const weakA = weakPositions(profA);
@@ -5145,25 +5147,28 @@ function generateArchetypeProposals(ridA, ridB, league) {
   const clsA = profA.classification?.label || 'Mid-Tier';
   const isContenderA = clsA === 'Contender' || clsA === 'Fringe';
 
+  // QB/TE start 1 → need 1 solid. RB/WR start 2 → need 2 solid for depth.
+  const POS_DEPTH_MIN2 = { QB: 1, RB: 2, WR: 2, TE: 1 };
   function weakPos(prof) {
     return ['QB','RB','WR','TE'].filter(pos => {
       const arr = prof.byPos[pos] || [];
       if (!arr.length || arr[0].tier >= 3) return true;
-      return arr.filter(p => p.tier <= 3).length < 2; // depth shortage
+      return arr.filter(p => p.tier <= 3).length < (POS_DEPTH_MIN2[pos] || 1);
     });
   }
   const weakA = weakPos(profA);
   const weakB = weakPos(profB);
 
-  // All non-Cornerstone players sorted descending by value,
-  // excluding players at positions the team is already thin on
+  // All non-Cornerstone players sorted descending by value.
+  // Protect RB/WR depth: don't offer players at thin RB/WR positions
+  // (QB upgrade trades are intentional; elite TEs are Cornerstone-protected).
   function tradePool(prof, ownWeak) {
     return prof.all.filter(p => {
       if (p.actionTag === 'Cornerstone' || p.neutral <= 0) return false;
-      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') return true; // always tradeable
-      if (ownWeak.includes(p.pos)) {
+      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') return true;
+      if ((p.pos === 'RB' || p.pos === 'WR') && ownWeak.includes(p.pos)) {
         const posArr = prof.byPos[p.pos] || [];
-        if (posArr.length < 3) return false; // thin — don't offer away
+        if (posArr.length < 3) return false; // thin — protect depth
       }
       return true;
     }).sort((a, b) => b.neutral - a.neutral);
