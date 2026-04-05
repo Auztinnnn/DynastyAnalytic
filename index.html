@@ -6058,24 +6058,34 @@ function renderLeagueScouting() {
   }).join('');
 
   el.innerHTML = `
-    <div class="section-title" style="margin-bottom:14px">League Scouting</div>
-    <div class="scout-top-grid" style="margin-bottom:20px">
-      <div class="scout-box">
-        <div class="scout-box-hdr">
-          Top Sell Opportunities
-        </div>
-        ${sellsHtml}
+    <div class="section">
+      <div class="section-title">League Scouting — Sell &amp; Buy
+        <button class="capture-btn" onclick="captureSection(this)" data-label="scouting-sell-buy">📸 Share</button>
       </div>
-      <div class="scout-box">
-        <div class="scout-box-hdr">
-          Top Buy Opportunities
+      <div class="scout-top-grid">
+        <div class="scout-box">
+          <div class="scout-box-hdr">Top Sell Opportunities</div>
+          ${sellsHtml}
         </div>
-        ${buysHtml}
+        <div class="scout-box">
+          <div class="scout-box-hdr">Top Buy Opportunities</div>
+          ${buysHtml}
+        </div>
       </div>
     </div>
-    <div class="section-title" style="margin-bottom:10px">Team Needs</div>
-    <div class="scout-needs-grid">${needsHtml}</div>
-    ${buyLowHtml}`;
+    ${buyLowCandidates.length ? `
+    <div class="section" style="margin-top:20px">
+      <div class="section-title">Buy-Low Targets ${tip('Players where KTC market sentiment is bullish (>8% above FC value) or high-value Speculative-tagged players. These are potentially undervalued on the trade market right now.')}
+        <button class="capture-btn" onclick="captureSection(this)" data-label="scouting-buy-low">📸 Share</button>
+      </div>
+      <div class="scout-box">${buyLowRows}</div>
+    </div>` : ''}
+    <div class="section" style="margin-top:20px">
+      <div class="section-title">Team Needs
+        <button class="capture-btn" onclick="captureSection(this)" data-label="scouting-team-needs">📸 Share</button>
+      </div>
+      <div class="scout-needs-grid">${needsHtml}</div>
+    </div>`;
 }
 
 // ── RENDER: ROOKIE BOARD ─────────────────────────────────────
