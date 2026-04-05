@@ -8307,19 +8307,20 @@ function renderDraftHistory() {
     const expected = Math.max(400, Math.round(6800 * Math.exp(-2.5 * pct)));
     const fc     = S.fcBySleeperId[String(p.player_id)];
     const value  = fc ? fc.value : 0;
+    const realizationPct = value ? Math.round((value / expected) * 100) : null;
     let grade, gradeColor, gradeLabel, letterGrade;
     if (!value) {
-      grade = 'na'; gradeColor = 'var(--muted)'; gradeLabel = 'N/A'; letterGrade = '—';
-    } else if (value >= expected * 1.5) {
-      grade = 'hit';  gradeColor = 'var(--green)';  gradeLabel = 'Hit';        letterGrade = 'A';
-    } else if (value >= expected * 0.8) {
-      grade = 'solid'; gradeColor = 'var(--accent)'; gradeLabel = 'Solid';     letterGrade = 'B';
-    } else if (value >= expected * 0.4) {
-      grade = 'avg';  gradeColor = 'var(--yellow)'; gradeLabel = 'Below Avg';  letterGrade = 'C';
+      grade = 'na';      gradeColor = 'var(--muted)'; gradeLabel = 'N/A';           letterGrade = '—';
+    } else if (realizationPct >= 140) {
+      grade = 'elite';   gradeColor = '#ffd700';       gradeLabel = '⭐ Elite Hit';  letterGrade = 'A';
+    } else if (realizationPct >= 110) {
+      grade = 'hit';     gradeColor = 'var(--green)';  gradeLabel = '✅ Hit';        letterGrade = 'B';
+    } else if (realizationPct >= 80) {
+      grade = 'neutral'; gradeColor = 'var(--muted)';  gradeLabel = '⚖️ Neutral';   letterGrade = 'C';
     } else {
-      grade = 'bust'; gradeColor = 'var(--red)';    gradeLabel = '💀 Bust';    letterGrade = 'D';
+      grade = 'bust';    gradeColor = 'var(--red)';    gradeLabel = '❌ Bust';       letterGrade = 'D';
     }
-    return { ...p, pickNo, value, expected, grade, gradeColor, gradeLabel, letterGrade };
+    return { ...p, pickNo, value, expected, realizationPct, grade, gradeColor, gradeLabel, letterGrade };
   }).sort((a, b) => a.pickNo - b.pickNo);
 
   const filtered = selTeam === 'ALL' ? graded : graded.filter(p => String(p.roster_id) === selTeam);
@@ -8337,7 +8338,7 @@ function renderDraftHistory() {
         const cur = Object.values(currentLd.rosterMap).find(r => r.ownerId === rm.ownerId);
         if (cur) name = cur.teamName;
       }
-      teamStats[rid] = { name, hit: 0, solid: 0, avg: 0, bust: 0, na: 0, total: 0, totalValue: 0 };
+      teamStats[rid] = { name, elite: 0, hit: 0, neutral: 0, bust: 0, na: 0, total: 0, totalValue: 0 };
     }
     teamStats[rid].total++;
     teamStats[rid][p.grade]++;
@@ -8377,17 +8378,18 @@ function renderDraftHistory() {
     .map(([rid, st]) => {
       const lg = teamLetterGrade(rid);
       const gc = gradeColors[lg] || 'var(--muted)';
-      const graded = st.total - st.na;
-      const hitPct = graded ? Math.round((st.hit / graded) * 100) : 0;
-      const soldPct = graded ? Math.round((st.solid / graded) * 100) : 0;
-      const avgVal = st.total ? Math.round(st.totalValue / st.total) : 0;
+      const gradedPicks = st.total - st.na;
+      const elitePct = gradedPicks ? Math.round((st.elite / gradedPicks) * 100) : 0;
+      const hitPct   = gradedPicks ? Math.round(((st.elite + st.hit) / gradedPicks) * 100) : 0;
+      const avgVal   = st.total ? Math.round(st.totalValue / st.total) : 0;
       return `<div class="card" style="min-width:160px">
         <div class="card-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${st.name}</div>
         <div style="font-size:2rem;font-weight:800;color:${gc};line-height:1">${lg}</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px">${hitPct}% hit · ${soldPct}% solid</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px">${hitPct}% hit · ${elitePct}% elite</div>
         <div style="font-size:.7rem;color:var(--muted)">
-          <span style="color:var(--green)">▲ ${st.hit} hits</span> &nbsp;
-          <span style="color:var(--red)">▼ ${st.bust} busts</span>
+          <span style="color:#ffd700">⭐ ${st.elite}</span> &nbsp;
+          <span style="color:var(--green)">✅ ${st.hit}</span> &nbsp;
+          <span style="color:var(--red)">❌ ${st.bust}</span>
         </div>
         <div style="font-size:.7rem;color:var(--muted);margin-top:3px">Avg value: <strong style="color:var(--text)">${avgVal.toLocaleString()}</strong></div>
       </div>`;
@@ -8414,7 +8416,7 @@ function renderDraftHistory() {
       <td><span class="pos-badge pos-${pos}">${pos}</span></td>
       <td style="color:var(--text)">${teamName}</td>
       <td style="color:var(--accent);font-weight:600">${val}</td>
-      <td><span style="font-weight:700;color:${p.gradeColor}">${p.gradeLabel}</span></td>
+      <td><span style="font-weight:700;color:${p.gradeColor}">${p.gradeLabel}</span>${p.realizationPct != null ? `<span style="font-size:.68rem;color:var(--muted);margin-left:5px">${p.realizationPct}%</span>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -8446,10 +8448,10 @@ function renderDraftHistory() {
         ${selTeam !== 'ALL' ? '<button class="capture-btn" onclick="captureSection(this)" data-label="draft-picks">📸 Share</button>' : ''}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:.72rem">
-        <span style="padding:2px 8px;border-radius:4px;background:rgba(63,185,80,.15);color:var(--green);font-weight:700">▲ Hit</span><span style="color:var(--muted)">Current value ≥ 150% of expected at pick slot</span>
-        <span style="padding:2px 8px;border-radius:4px;background:rgba(88,166,255,.15);color:var(--accent);font-weight:700">Solid</span><span style="color:var(--muted)">≥ 80% of expected</span>
-        <span style="padding:2px 8px;border-radius:4px;background:rgba(210,153,34,.15);color:var(--yellow);font-weight:700">Below Avg</span><span style="color:var(--muted)">≥ 40% of expected</span>
-        <span style="padding:2px 8px;border-radius:4px;background:rgba(248,81,73,.15);color:var(--red);font-weight:700">💀 Bust</span><span style="color:var(--muted)">&lt; 40% of expected</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(255,215,0,.15);color:#ffd700;font-weight:700">⭐ Elite Hit</span><span style="color:var(--muted)">≥ 140% of expected slot value</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(63,185,80,.15);color:var(--green);font-weight:700">✅ Hit</span><span style="color:var(--muted)">≥ 110% of expected</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(125,133,144,.15);color:var(--muted);font-weight:700">⚖️ Neutral</span><span style="color:var(--muted)">80% – 110% of expected</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(248,81,73,.15);color:var(--red);font-weight:700">❌ Bust</span><span style="color:var(--muted)">&lt; 80% of expected</span>
       </div>
       <div class="table-wrap">
         <table>
