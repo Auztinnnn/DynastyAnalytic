@@ -4903,11 +4903,12 @@ function generateTradeProposal() {
   const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
   const TOLERANCE = 0.14; // within 14% = balanced
 
-  // Weak positions for each team (tier 3+)
+  // Weak positions for each team (tier 3+ starter OR fewer than 2 solid options)
   function weakPositions(prof) {
     return ['QB','RB','WR','TE'].filter(pos => {
       const arr = prof.byPos[pos] || [];
-      return !arr.length || arr[0].tier >= 3;
+      if (!arr.length || arr[0].tier >= 3) return true;
+      return arr.filter(p => p.tier <= 3).length < 2; // depth shortage
     });
   }
   const weakA = weakPositions(profA);
@@ -4925,7 +4926,9 @@ function generateTradeProposal() {
         if (posArr.length >= 3 && p.tier <= 3) reason = 'Surplus';
         else if (posArr.length >= 2 && p.tier >= 3) reason = 'Depth';
       } else if (p.tier >= 3 && p.actionTag !== 'Cornerstone') {
-        reason = 'Depth';
+        // Only mark as Depth tradeable if team has genuine surplus (3+) at this position
+        const posArr = prof.byPos[p.pos] || [];
+        if (posArr.length >= 3) reason = 'Depth';
       }
       if (reason) result.push({ ...p, reason });
     });
@@ -5145,16 +5148,25 @@ function generateArchetypeProposals(ridA, ridB, league) {
   function weakPos(prof) {
     return ['QB','RB','WR','TE'].filter(pos => {
       const arr = prof.byPos[pos] || [];
-      return !arr.length || arr[0].tier >= 3;
+      if (!arr.length || arr[0].tier >= 3) return true;
+      return arr.filter(p => p.tier <= 3).length < 2; // depth shortage
     });
   }
   const weakA = weakPos(profA);
   const weakB = weakPos(profB);
 
-  // All non-Cornerstone players sorted descending by value
-  function tradePool(prof) {
-    return prof.all.filter(p => p.actionTag !== 'Cornerstone' && p.neutral > 0)
-                   .sort((a, b) => b.neutral - a.neutral);
+  // All non-Cornerstone players sorted descending by value,
+  // excluding players at positions the team is already thin on
+  function tradePool(prof, ownWeak) {
+    return prof.all.filter(p => {
+      if (p.actionTag === 'Cornerstone' || p.neutral <= 0) return false;
+      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') return true; // always tradeable
+      if (ownWeak.includes(p.pos)) {
+        const posArr = prof.byPos[p.pos] || [];
+        if (posArr.length < 3) return false; // thin — don't offer away
+      }
+      return true;
+    }).sort((a, b) => b.neutral - a.neutral);
   }
   function teamPicks(rosterId) {
     return getTeamPickList(rosterId).map(pk => {
@@ -5164,7 +5176,7 @@ function generateArchetypeProposals(ridA, ridB, league) {
     }).filter(pk => pk.val > 0).sort((a, b) => b.val - a.val);
   }
 
-  const poolA = tradePool(profA), poolB = tradePool(profB);
+  const poolA = tradePool(profA, weakA), poolB = tradePool(profB, weakB);
   const picksA = teamPicks(ridA),  picksB = teamPicks(ridB);
 
   function valOf(items) { return items.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0); }
