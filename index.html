@@ -2592,7 +2592,7 @@ const PICK_BUCKET_CFG = {
 const CLASS_STRENGTH = {
   'Contender':         88,
   'Fringe':  64,
-  'Productive Middle': 50,
+  'Mid-Tier': 50,
   'Retool':            32,
   'Rebuild':           15,
   'Rebuilding':        10,
@@ -2602,7 +2602,7 @@ function mveProjectedPickBucket(teamProfile, season) {
   const B = PICK_BUCKET_CFG;
   if (!teamProfile) return { bucket: 'Mid', confidence: 'low', source: 'fallback' };
 
-  const cls        = (teamProfile.classification && teamProfile.classification.label) || 'Productive Middle';
+  const cls        = (teamProfile.classification && teamProfile.classification.label) || 'Mid-Tier';
   const sv         = teamProfile.starterValue || 0;
   const age        = teamProfile.weightedAge  || 27;
   const classScore = CLASS_STRENGTH[cls] !== undefined ? CLASS_STRENGTH[cls] : 50;
@@ -3992,7 +3992,7 @@ function renderPowerRankings() {
   let html='';
   if (!hasFC) html+=`<div class="warn-banner">FantasyCalc values could not be loaded. Rankings use recent scoring only.</div>`;
   html+=`<div class="section"><div class="section-title">Roster Value by Position ${tip('Stacked bar showing total FantasyCalc dynasty trade value for each team, broken out by position. Taller bar = more total dynasty capital. Does not reflect age or window — use Franchise Intel for that.')} <span class="section-note">${hasFC?'FantasyCalc dynasty values | '+fmtLabel:'Recent form only'}</span></div><div class="chart-wrap power-chart-wrap"><canvas id="powerChart"></canvas></div></div>`;
-  html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe, Productive Middle, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
+  html+=`<div class="section"><div class="section-title">Team Rankings ${tip('Power Score blends recent 3-week scoring (how hot you are right now) with total roster trade value. Tier is the MVE dynasty classification — score-based, not rank-capped. Multiple teams can share a tier if they genuinely qualify.')}</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Team</th><th>Tier ${tip('MVE dynasty tier: Contender, Fringe, Mid-Tier, Retool, or Rebuild. Assigned by absolute roster score thresholds — not capped by rank. If multiple teams meet Contender criteria, all are shown as Contender.')}</th>${hasFC?`<th>Total Value ${tip('Sum of all FantasyCalc dynasty values on the roster. Raw depth metric — does not penalize for age or reward for starter concentration.')}</th><th>QB ${tip('Rank pill shows where this team ranks among all league teams in QB room strength (1 = best). Green = top quarter, yellow = middle, red = bottom quarter.')}</th><th>RB</th><th>WR</th><th>TE</th>`:''}<th>Recent (3wk) ${tip('Average fantasy points scored per week over the last 3 completed weeks. Measures current form and hot/cold streaks.')}</th><th>Power Score ${tip('Composite score: 60% total roster trade value (normalized 0–100) + 40% recent 3-week scoring rate (normalized 0–100). Higher = stronger current standing.')}</th></tr></thead><tbody>`;
   const rfAvg = rankings.reduce((s,r)=>s+r.recentPts,0) / (rankings.length||1);
   rankings.forEach((r,i)=>{
     const cls = mveClassMap[r.rosterId] || { label:'—', color:'#8b949e', bg:'rgba(148,163,184,.1)' };
@@ -4813,7 +4813,7 @@ function mveLeaguePickBuckets(league) {
   const scored = teams.map(r => {
     const prof = mveTeamProfile(r.rosterId, league);
     if (!prof) return { rosterId: r.rosterId, score: 50 };
-    const cls = (prof.classification && prof.classification.label) || 'Productive Middle';
+    const cls = (prof.classification && prof.classification.label) || 'Mid-Tier';
     const sv  = prof.starterValue || 0;
     const age = prof.weightedAge  || 27;
     const classScore = CLASS_STRENGTH[cls] !== undefined ? CLASS_STRENGTH[cls] : 50;
@@ -5139,7 +5139,7 @@ function generateArchetypeProposals(ridA, ridB, league) {
   const profB = mveTeamProfile(ridB, league);
   if (!profA || !profB) return [];
 
-  const clsA = profA.classification?.label || 'Productive Middle';
+  const clsA = profA.classification?.label || 'Mid-Tier';
   const isContenderA = clsA === 'Contender' || clsA === 'Fringe';
 
   function weakPos(prof) {
@@ -5766,7 +5766,7 @@ function renderScoutingReport(ridA, ridB) {
   // Build MVE profiles for window/needs context
   const profA = mveTeamProfile(ridA, league);
   const profB = mveTeamProfile(ridB, league);
-  const clsB  = profB?.classification?.label || 'Productive Middle';
+  const clsB  = profB?.classification?.label || 'Mid-Tier';
   const isRebuildB   = clsB.includes('Rebuild') || clsB === 'Retool';
   const isContenderB = clsB === 'Contender' || clsB === 'Fringe';
 
@@ -5950,7 +5950,7 @@ function renderLeagueScouting() {
   }
 
   const teams = Object.values(league.rosterMap).sort((a,b) => a.teamName.localeCompare(b.teamName));
-  const profiles = teams.map(t => mveTeamProfile(t.rosterId, league)).filter(Boolean);
+  const profiles = mveClassifyTeams(teams.map(t => mveTeamProfile(t.rosterId, league)).filter(Boolean));
 
   const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
 
@@ -6716,7 +6716,7 @@ function mveTeamProfile(rosterId, league) {
 const CLASS_STYLES = {
   'Contender':         { color:'#d1fae5', bg:'#166534', border:'#14532d' },
   'Fringe':            { color:'#fef3c7', bg:'#92400e', border:'#78350f' },
-  'Productive Middle': { color:'#dbeafe', bg:'#1e40af', border:'#1e3a8a' },
+  'Mid-Tier': { color:'#dbeafe', bg:'#1e40af', border:'#1e3a8a' },
   'Retool':            { color:'#ede9fe', bg:'#5b21b6', border:'#4c1d95' },
   'Rebuild':           { color:'#fae8ff', bg:'#7e22ce', border:'#6b21a8' },
   'Rebuilding':        { color:'#fee2e2', bg:'#991b1b', border:'#7f1d1d' },
@@ -6727,7 +6727,7 @@ const CLASS_THRESHOLDS = {
   // Absolute starter value thresholds (in FC points)
   contenderSV:      49000,  // must exceed this for Contender consideration
   fringeContSV:     39000,  // Fringe requires genuine starter strength
-  solidSV:          23000,  // floor for Productive Middle
+  solidSV:          23000,  // floor for Mid-Tier
   bottomFloorSV:    16000,  // below this → Rebuild regardless of anything else
   // Age gates
   contenderMaxAge:  28.5,
@@ -6792,13 +6792,13 @@ function mveClassifyTeam(starterVal, weightedAge, pickVal, byPos, totalVal) {
   if ((hasBigPicks && starterVal < T.fringeContSV) || (isOld && starterVal < T.fringeContSV))
     return { label:'Retool',            window:'2–4 yr', ...CLASS_STYLES['Retool'] };
 
-  // FAKE STRENGTH → Productive Middle at best
+  // FAKE STRENGTH → Mid-Tier at best
   if (fakeStrength)
-    return { label:'Productive Middle', window:'2–4 yr', ...CLASS_STYLES['Productive Middle'] };
+    return { label:'Mid-Tier', window:'2–4 yr', ...CLASS_STYLES['Mid-Tier'] };
 
   // PRODUCTIVE MIDDLE: viable but not a title threat
   if (starterVal >= T.solidSV && weakPos <= 2)
-    return { label:'Productive Middle', window:'2–4 yr', ...CLASS_STYLES['Productive Middle'] };
+    return { label:'Mid-Tier', window:'2–4 yr', ...CLASS_STYLES['Mid-Tier'] };
 
   return { label:'Rebuild',             window:'4–6 yr', ...CLASS_STYLES['Rebuild'] };
 }
@@ -6876,13 +6876,13 @@ function mveClassifyTeams(profiles) {
     else if ((hasBigPicks && !isTopHalf) || (isOld && !isTopTier)) {
       label = 'Retool'; window_ = '2–4 yr';
     }
-    // FAKE STRENGTH: depth without real starters → Productive Middle at best
+    // FAKE STRENGTH: depth without real starters → Mid-Tier at best
     else if (fakeStrength && sv < T.fringeContSV) {
-      label = 'Productive Middle'; window_ = '2–4 yr';
+      label = 'Mid-Tier'; window_ = '2–4 yr';
     }
     // PRODUCTIVE MIDDLE: viable but not a title threat
     else if (!isBottom && weakPos <= 2 && sv >= T.solidSV) {
-      label = 'Productive Middle'; window_ = '2–4 yr';
+      label = 'Mid-Tier'; window_ = '2–4 yr';
     }
     // REBUILD: default for anything not caught above
     else {
@@ -6929,7 +6929,7 @@ function mveClassifyTeams(profiles) {
     const keepT = new Set(topTierList.slice(0, maxTopTier).map(p => p.rosterId));
     result.forEach(p => {
       if (!keepT.has(p.rosterId) && ['Contender','Fringe'].includes(p.classification.label)) {
-        const dem = 'Productive Middle';
+        const dem = 'Mid-Tier';
         p.classification = { ...p.classification, label: dem, window:'2–4 yr', ...CLASS_STYLES[dem] };
         p.actions = mveTeamActions({ label: dem }, p.byPos, p.weightedAge, p.pickValue);
       }
@@ -8228,7 +8228,7 @@ function runMveValidation(league) {
   const nCont   = classified.filter(p=>p.classification.label==='Contender').length;
   const nFringe = classified.filter(p=>p.classification.label==='Fringe').length;
   const nRebuild= classified.filter(p=>p.classification.label.includes('Rebuild')).length;
-  const nMiddle = classified.filter(p=>p.classification.label==='Productive Middle').length;
+  const nMiddle = classified.filter(p=>p.classification.label==='Mid-Tier').length;
 
   check(`${n} teams classified`, n > 0, `${n} teams in league`);
   warn(`Contenders (${nCont}) ≤ ${Math.ceil(n*CLASS_THRESHOLDS.maxContenderFraction)}`, nCont <= Math.ceil(n*CLASS_THRESHOLDS.maxContenderFraction), `${nCont} of ${n}`);
