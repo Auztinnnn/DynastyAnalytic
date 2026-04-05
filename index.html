@@ -1667,6 +1667,12 @@
 </div>
 
 <script>
+// Catch any unhandled promise rejection during loading and surface it
+window.addEventListener('unhandledrejection', e => {
+  const loadingVisible = document.getElementById('loading')?.style.display !== 'none';
+  if (loadingVisible) showError('Unexpected error: ' + (e.reason?.message || String(e.reason)));
+});
+
 // ── CONSTANTS ─────────────────────────────────────────────────
 const BASE    = 'https://api.sleeper.app/v1';
 const FC_BASE = 'https://api.fantasycalc.com/values/current';
@@ -1783,18 +1789,24 @@ function contenderTier(rank, total) {
 }
 
 // ── LOAD ──────────────────────────────────────────────────────
+function setLoadingMsg(msg) {
+  const el = document.querySelector('#loading p');
+  if (el) el.textContent = msg;
+}
+
 async function initLoad() {
   const id = document.getElementById('leagueInput').value.trim();
   if (!id) return;
   showLoading(true);
   try {
+    setLoadingMsg('Connecting to Sleeper…');
     await loadChain(id);
     showLoading(false);
     renderAll();
     // Load matchup weeks and Sleeper player data in the background
     loadMatchupsBackground();
     loadSleeperPlayers();
-  } catch(e) { showError(e.message); }
+  } catch(e) { showError(e.message || String(e)); }
 }
 
 // Parses one Sleeper API response set into the rosterMap/userMap structure.
@@ -1833,6 +1845,7 @@ async function loadChain(startId) {
   playoffsLoaded = false; playoffsLoading = false;
 
   // Load ONLY the current season before showing the UI — historical seasons load in background.
+  setLoadingMsg('Loading league from Sleeper…');
   const [league, users, rosters] = await Promise.all([
     api('/league/' + startId),
     api('/league/' + startId + '/users'),
@@ -1848,6 +1861,7 @@ async function loadChain(startId) {
   }
 
   // FantasyCalc + traded picks + KTC — all fired in parallel
+  setLoadingMsg('Loading player values…');
   const ld = S.leagues[S.currentLeagueId];
   const isSF = (ld.league.roster_positions||[]).includes('SUPER_FLEX');
   const rec   = (ld.league.scoring_settings && ld.league.scoring_settings.rec) || 0;
