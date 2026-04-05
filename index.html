@@ -1707,8 +1707,9 @@ let S = {
   draftHistory: {},       // { leagueId: { season, rosterMap, picks[] } }
   playoffData:  {},       // { leagueId: { bracket, matchupsByWeek, season, rosterMap, maxRound, regPPG } }
 };
-let draftHistoryLoaded  = false;
-let draftHistoryLoading = false;
+let draftHistoryLoaded   = false;
+let draftHistoryLoading  = false;
+let draftHistoryPromise  = null;
 let playoffsLoaded  = false;
 let playoffsLoading = false;
 
@@ -1841,7 +1842,7 @@ function _buildSeasonEntry(id, league, users, rosters) {
 
 async function loadChain(startId) {
   S.seasonChain = []; S.leagues = {};
-  S.draftHistory = {}; draftHistoryLoaded = false; draftHistoryLoading = false;
+  S.draftHistory = {}; draftHistoryLoaded = false; draftHistoryLoading = false; draftHistoryPromise = null;
   playoffsLoaded = false; playoffsLoading = false;
 
   // Load ONLY the current season before showing the UI — historical seasons load in background.
@@ -8301,9 +8302,10 @@ async function loadDraftHistory() {
   draftHistoryLoading = false;
 }
 
-async function ensureDraftHistory() {
-  if (draftHistoryLoaded || draftHistoryLoading) return;
-  await loadDraftHistory();
+function ensureDraftHistory() {
+  if (draftHistoryLoaded) return Promise.resolve();
+  if (!draftHistoryPromise) draftHistoryPromise = loadDraftHistory();
+  return draftHistoryPromise;
 }
 
 function renderDraftHistory() {
