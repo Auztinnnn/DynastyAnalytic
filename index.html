@@ -5145,9 +5145,14 @@ function getPosStarterSlots(prof, pos) {
   return { QB: ctx.starterQB, RB: ctx.starterRB, WR: ctx.starterWR, TE: ctx.starterTE }[pos] || 1;
 }
 
-// Tier-weighted depth per position (single elite TE >> two fringe TEs)
+// Tier-weighted depth per position (single elite TE >> two fringe TEs).
+// Speculative-tagged players (young/unproven) count at 75% — they have upside
+// but are not proven starters, so should not fully satisfy a depth requirement.
 function getEffectiveDepth(prof, pos) {
-  return (prof.byPos[pos] || []).reduce((s, p) => s + (TRADE_TIER_W[p.tier] || 0.05), 0);
+  return (prof.byPos[pos] || []).reduce((s, p) => {
+    const w = TRADE_TIER_W[p.tier] || 0.05;
+    return s + (p.actionTag === 'Speculative' ? w * 0.75 : w);
+  }, 0);
 }
 
 // Format-aware depth thresholds — SF leagues demand stronger QB depth, TEP raises TE bar, flex widens RB/WR bar
@@ -5251,9 +5256,8 @@ function buildTradePool(prof) {
       return rank > Math.max(slots + 1, 2); // protect all starters + 1 at weak positions
     }
     if (state === 'neutral') {
-      if (rank <= slots && p.tier <= 2) return false;               // protect elite starters always
-      if (isFringe && rank <= slots && p.tier <= 3) return false;   // fringe: also protect T3 starters
-      return true;
+      if (rank <= slots) return false;  // protect ALL starters — neutral means you need them all
+      return true;                      // bench/depth beyond starter line is tradeable
     }
     // strength: allow most pieces; protect only elite anchor unless rebuilding
     if (rank === 1 && p.tier === 1 && !isRebuilder) return false;

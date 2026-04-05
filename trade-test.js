@@ -8,7 +8,10 @@ function getPosStarterSlots(prof, pos) {
   return { QB: ctx.starterQB, RB: ctx.starterRB, WR: ctx.starterWR, TE: ctx.starterTE }[pos] || 1;
 }
 function getEffectiveDepth(prof, pos) {
-  return (prof.byPos[pos] || []).reduce((s, p) => s + (TRADE_TIER_W[p.tier] || 0.05), 0);
+  return (prof.byPos[pos] || []).reduce((s, p) => {
+    const w = TRADE_TIER_W[p.tier] || 0.05;
+    return s + (p.actionTag === 'Speculative' ? w * 0.75 : w);
+  }, 0);
 }
 function getPosDepthThresh(prof, pos) {
   const ctx = prof.leagueCtx || {};
@@ -84,9 +87,8 @@ function buildTradePool(prof) {
     const slots = getPosStarterSlots(prof, pos);
     if (state === 'weakness') return rank > Math.max(slots + 1, 2);
     if (state === 'neutral') {
-      if (rank <= slots && p.tier <= 2) return false;
-      if (isFringe && rank <= slots && p.tier <= 3) return false;
-      return true;
+      if (rank <= slots) return false;  // protect ALL starters — neutral means you need them all
+      return true;                      // bench/depth beyond starter line is tradeable
     }
     if (rank === 1 && p.tier === 1 && !isRebuilder) return false;
     if (isFringe && rank <= 2 && p.tier <= 2) return false;
@@ -593,6 +595,97 @@ suite('Rebuild insulation gate — hasInsulation', () => {
     penaltyB, 0);
   expect('Proposal B penalty > Proposal A penalty (B is ranked better)',
     penaltyB > penaltyA, true);
+});
+
+// ── Suite 8: Speculative depth discount ──────────────────────────────────────
+suite('Speculative depth discount in getEffectiveDepth', () => {
+  // T2 Speculative contributes 0.75 * 0.75 = 0.5625, not 0.75
+  // This matters when Speculative player is the only real depth piece
+
+  // T3 RB1 (proven) + T2 Speculative RB2 → depth = 0.5 + 0.5625 = 1.0625 < 1.2 → weakness
+  // Without discount it would be 0.5 + 0.75 = 1.25 → neutral (wrong)
+  const profSpecRB = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',3,5600), pl('RB',2,5200,{tag:'Speculative'})],
+    WR: [pl('WR',1,9000), pl('WR',2,6000), pl('WR',3,4000)],
+    TE: [pl('TE',1,7000)],
+  });
+  expect('T3 RB1 + T2 Speculative RB2 → RB weakness (Speculative discounted)',
+    getPositionStrengthState(profSpecRB, 'RB'), 'weakness');
+
+  // Without speculative: T1 WR + T2 WR + T2 Speculative WR → 1.0 + 0.75 + 0.5625 = 2.3125
+  // vs str=2.2 → strength; Speculative WR doesn't drop this below strength threshold
+  const profSpecWR = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',2,6000), pl('RB',3,4000)],
+    WR: [pl('WR',1,9500), pl('WR',2,7000), pl('WR',2,6000,{tag:'Speculative'})],
+    TE: [pl('TE',1,6000)],
+  });
+  expect('T1+T2+T2Spec WR room → still strength (elite depth absorbs discount)',
+    getPositionStrengthState(profSpecWR, 'WR'), 'strength');
+
+  // T2 Speculative alone at TE in 1QB → 0.75*0.75=0.5625 < 0.75 → weakness
+  const profSpecTE = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',2,6000), pl('RB',3,4000)],
+    WR: [pl('WR',1,9000), pl('WR',2,6500), pl('WR',3,4500)],
+    TE: [pl('TE',2,5500,{tag:'Speculative'})],
+  });
+  expect('T2 Speculative TE alone in 1QB → weakness (cannot fully anchor TE slot)',
+    getPositionStrengthState(profSpecTE, 'TE'), 'weakness');
+
+  // T1 proven TE alone → still neutral (T1 always clears the TE bar)
+  const profEliteTE = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',2,6000), pl('RB',3,4000)],
+    WR: [pl('WR',1,9000), pl('WR',2,6500), pl('WR',3,4500)],
+    TE: [pl('TE',1,8500)],
+  });
+  expect('T1 proven TE alone in 1QB → neutral (elite TE clears bar unaffected)',
+    getPositionStrengthState(profEliteTE, 'TE'), 'neutral');
+});
+
+// ── Suite 9: Neutral position protects ALL starters ──────────────────────────
+suite('buildTradePool — neutral position protects all starters regardless of tier', () => {
+  // T3 RB1 + T2 Speculative: depth=1.0625 → weakness (Speculative discounted)
+  // Weakness rule: protect rank ≤ max(slots+1, 2) = 3
+  // Both RB1 (rank 1) and Speculative (rank 2) should be protected
+  const profSpecRB = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',3,5600,{name:'TreVeyon'}), pl('RB',2,5200,{tag:'Speculative',name:'SpecRB'})],
+    WR: [pl('WR',1,9000), pl('WR',2,6000), pl('WR',3,4000)],
+    TE: [pl('TE',1,7000)],
+  });
+  const poolSpecRB = buildTradePool(profSpecRB);
+  const rbsInPool = poolSpecRB.filter(p => p.pos === 'RB');
+  expect('T3 RB1 (TreVeyon) NOT in pool when RB is weakness', rbsInPool.some(p => p.name==='TreVeyon'), false);
+  expect('T2 Speculative RB2 NOT in pool when RB is weakness', rbsInPool.some(p => p.name==='SpecRB'), false);
+
+  // T2 RB1 + T2 proven RB2 → depth=1.5 → neutral; both starters protected (rank≤slots=2)
+  const profNeutralRB = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',2,6500,{name:'RB1'}), pl('RB',2,5000,{name:'RB2'})],
+    WR: [pl('WR',1,9000), pl('WR',2,6000), pl('WR',3,4000)],
+    TE: [pl('TE',1,7000)],
+  });
+  const poolNeutralRB = buildTradePool(profNeutralRB);
+  const rbsNeutral = poolNeutralRB.filter(p => p.pos === 'RB');
+  expect('T2 RB1 NOT in pool at neutral (all starters protected)', rbsNeutral.some(p => p.name==='RB1'), false);
+  expect('T2 RB2 NOT in pool at neutral (all starters protected)', rbsNeutral.some(p => p.name==='RB2'), false);
+
+  // At strength: RB3 bench piece IS in pool
+  const profStrongRB = makeProf('Contender', {
+    QB: [pl('QB',1,8000)],
+    RB: [pl('RB',1,9000,{name:'RB1'}), pl('RB',2,6500,{name:'RB2'}), pl('RB',3,4000,{name:'RB3bench'})],
+    WR: [pl('WR',2,6000), pl('WR',3,4000)],
+    TE: [pl('TE',1,7000)],
+  });
+  // RB depth: 1.0+0.75+0.5=2.25 > 2.2 → strength
+  expect('RB room with T1+T2+T3 → strength', getPositionStrengthState(profStrongRB,'RB'), 'strength');
+  const poolStrongRB = buildTradePool(profStrongRB);
+  expect('T3 RB bench IS in pool at strength', poolStrongRB.some(p => p.name==='RB3bench'), true);
+  // T1 anchor still protected at strength for non-rebuilder
+  expect('T1 RB anchor NOT in pool at strength (non-rebuilder)', poolStrongRB.some(p => p.name==='RB1'), false);
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────
