@@ -7313,14 +7313,21 @@ function renderFranchiseIntel() {
     <span class="section-note">MVE layered valuation · ${S.ktcAvailable?'FantasyCalc + KTC overlay':'FantasyCalc only'}</span>
   </div>
 
-  <div class="section" style="margin-bottom:24px">
+  <div id="franchise-ranking-section" class="section" style="margin-bottom:24px">
     <div class="section-title" style="font-size:.85rem;margin-bottom:10px">
       Dynasty Rankings ${tip('Summary ranking of all franchises using a composite Dynasty Score. Click any row to scroll to that team\'s franchise card. Click column headers to re-sort.')}
+      <button class="capture-btn" onclick="captureById('franchise-ranking-section',this)" title="Save ranking table as image">📸 Share</button>
       <span class="section-note">Click row → jump to card · click header → sort</span>
     </div>
     <div class="table-wrap" style="overflow-x:auto" id="franchise-ranking-table"></div>
   </div>
 
+  <div id="franchise-cards-section">
+    <div class="section-title" style="font-size:.85rem;margin-bottom:12px">
+      Franchise Cards ${tip('Deep dynasty health cards for every team. Click a team name to view their full roster.')}
+      <button class="capture-btn" onclick="captureById('franchise-cards-section',this)" title="Save franchise cards as image">📸 Share</button>
+      <span class="section-note">MVE layered valuation</span>
+    </div>
   <div class="franchise-grid" id="franchise-grid">`;
 
   profiles.forEach(prof => {
@@ -7422,7 +7429,7 @@ function renderFranchiseIntel() {
     </div>`;
   });
 
-  html += `</div></div>`; // close franchise-grid and franchise-snapshot
+  html += `</div></div></div>`; // close franchise-grid, franchise-cards-section, franchise-snapshot
 
   // ── Trade Finder section ──────────────────────────────────────
   const teamOpts = profiles.map(p =>
