@@ -1797,59 +1797,55 @@ async function initLoad() {
   } catch(e) { showError(e.message); }
 }
 
+// Parses one Sleeper API response set into the rosterMap/userMap structure.
+function _buildSeasonEntry(id, league, users, rosters) {
+  const userMap = {};
+  users.forEach(u => {
+    userMap[u.user_id] = {
+      teamName: (u.metadata && u.metadata.team_name) || u.display_name,
+      displayName: u.display_name,
+      avatar: u.avatar,
+    };
+  });
+  const rosterMap = {};
+  rosters.forEach(r => {
+    const u = userMap[r.owner_id] || {};
+    rosterMap[r.roster_id] = {
+      rosterId: r.roster_id, ownerId: r.owner_id,
+      teamName: u.teamName || ('Team ' + r.roster_id),
+      displayName: u.displayName || '',
+      avatar: u.avatar || null,
+      wins:   (r.settings && r.settings.wins)           || 0,
+      losses: (r.settings && r.settings.losses)         || 0,
+      ties:   (r.settings && r.settings.ties)           || 0,
+      fpts:   ((r.settings && r.settings.fpts)          || 0) + ((r.settings && r.settings.fpts_decimal)          || 0) / 100,
+      fpts_against: ((r.settings && r.settings.fpts_against) || 0) + ((r.settings && r.settings.fpts_against_decimal) || 0) / 100,
+      players: r.players || [],
+    };
+  });
+  const psStart = (league.settings && league.settings.playoff_week_start) || 15;
+  return { id, league, rosterMap, userMap, completedWeeks: [], playoffWeekStart: psStart, season: league.season };
+}
+
 async function loadChain(startId) {
   S.seasonChain = []; S.leagues = {};
   S.draftHistory = {}; draftHistoryLoaded = false; draftHistoryLoading = false;
   playoffsLoaded = false; playoffsLoading = false;
-  let id = startId, iterations = 0;
 
-  while (id && iterations < 6) {
-    iterations++;
-    const [league, users, rosters] = await Promise.all([
-      api('/league/' + id),
-      api('/league/' + id + '/users'),
-      api('/league/' + id + '/rosters'),
-    ]);
-    const userMap = {};
-    users.forEach(u => {
-      userMap[u.user_id] = {
-        teamName: (u.metadata && u.metadata.team_name) || u.display_name,
-        displayName: u.display_name,
-        avatar: u.avatar,
-      };
-    });
-    const rosterMap = {};
-    rosters.forEach(r => {
-      const u = userMap[r.owner_id] || {};
-      rosterMap[r.roster_id] = {
-        rosterId: r.roster_id, ownerId: r.owner_id,
-        teamName: u.teamName || ('Team ' + r.roster_id),
-        displayName: u.displayName || '',
-        avatar: u.avatar || null,
-        wins:   (r.settings && r.settings.wins)           || 0,
-        losses: (r.settings && r.settings.losses)         || 0,
-        ties:   (r.settings && r.settings.ties)           || 0,
-        fpts:   ((r.settings && r.settings.fpts)          || 0) + ((r.settings && r.settings.fpts_decimal)          || 0) / 100,
-        fpts_against: ((r.settings && r.settings.fpts_against) || 0) + ((r.settings && r.settings.fpts_against_decimal) || 0) / 100,
-        players: r.players || [],
-      };
-    });
+  // Load ONLY the current season before showing the UI — historical seasons load in background.
+  const [league, users, rosters] = await Promise.all([
+    api('/league/' + startId),
+    api('/league/' + startId + '/users'),
+    api('/league/' + startId + '/rosters'),
+  ]);
+  S.leagues[startId] = _buildSeasonEntry(startId, league, users, rosters);
+  S.seasonChain.push(startId);
+  S.currentLeagueId = startId;
 
-    const psStart = (league.settings && league.settings.playoff_week_start) || 15;
-
-    S.leagues[id] = { id, league, rosterMap, userMap, completedWeeks: [], playoffWeekStart: psStart, season: league.season };
-    S.seasonChain.push(id);
-
-    if (league.previous_league_id) {
-      id = league.previous_league_id;
-    } else { break; }
+  // Kick off historical season loading in the background (non-blocking)
+  if (league.previous_league_id) {
+    _loadHistoricalSeasons(league.previous_league_id);
   }
-
-  S.currentLeagueId = null;
-  for (const sid of S.seasonChain) {
-    if (S.leagues[sid].completedWeeks.length > 0) { S.currentLeagueId = sid; break; }
-  }
-  if (!S.currentLeagueId) S.currentLeagueId = S.seasonChain[0];
 
   // FantasyCalc + traded picks + KTC — all fired in parallel
   const ld = S.leagues[S.currentLeagueId];
@@ -1985,6 +1981,25 @@ async function loadChain(startId) {
     }
   } catch(e) { /* fallback to FC-only */ }
 
+}
+
+// Loads older seasons in the background after the UI is already visible.
+async function _loadHistoricalSeasons(startId) {
+  let id = startId, iterations = 0;
+  while (id && iterations < 5) {
+    iterations++;
+    try {
+      const [league, users, rosters] = await Promise.all([
+        api('/league/' + id),
+        api('/league/' + id + '/users'),
+        api('/league/' + id + '/rosters'),
+      ]);
+      S.leagues[id] = _buildSeasonEntry(id, league, users, rosters);
+      S.seasonChain.push(id);
+      updateSidebarSeason();
+      id = league.previous_league_id || null;
+    } catch(e) { break; } // non-critical — stop silently on error
+  }
 }
 
 const NFL_LOGO = team => `https://sleepercdn.com/images/team_logos/nfl/${team.toLowerCase()}.jpg`;
