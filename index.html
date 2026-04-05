@@ -1715,6 +1715,9 @@ let draftHistoryLoading  = false;
 let draftHistoryPromise  = null;
 let playoffsLoaded  = false;
 let playoffsLoading = false;
+// Tracks an in-flight season rollforward so fo_season_accepted is only persisted
+// after the new league loads successfully (avoids locking users out if load fails).
+let _pendingRollforward  = null; // { srcId, year, newId }
 
 // ── HELPERS ───────────────────────────────────────────────────
 async function api(path, timeoutMs = 10000) {
@@ -1879,8 +1882,9 @@ function _showNewSeasonBanner(newId, year, leagueName, srcId) {
 }
 
 async function _loadNewSeason(newId, srcId, year) {
-  // Mark old league as accepted so we never re-prompt for this transition
-  localStorage.setItem(`fo_season_accepted_${srcId}_${year}`, newId);
+  // Record the pending transition — fo_season_accepted is only written after
+  // initLoad() succeeds so a network failure doesn't permanently hide the banner.
+  _pendingRollforward = { srcId, year, newId };
   // Clear any dismissed state for the new league (fresh start)
   localStorage.removeItem(`fo_season_dismissed_${newId}_${year}`);
   document.getElementById('new-season-banner').style.display = 'none';
@@ -1904,6 +1908,11 @@ async function initLoad() {
     await loadChain(id);
     // Persist only after a successful load — never save a bad ID
     localStorage.setItem('fo_league_id', id);
+    // Confirm a pending rollforward transition now that the load succeeded
+    if (_pendingRollforward && _pendingRollforward.newId === id) {
+      localStorage.setItem(`fo_season_accepted_${_pendingRollforward.srcId}_${_pendingRollforward.year}`, id);
+      _pendingRollforward = null;
+    }
     showLoading(false);
     renderAll();
     // Load matchup weeks and Sleeper player data in the background
@@ -1916,6 +1925,8 @@ async function initLoad() {
     if (localStorage.getItem('fo_league_id') === id) {
       localStorage.removeItem('fo_league_id');
     }
+    // Discard pending rollforward so the banner can re-appear on retry
+    _pendingRollforward = null;
     showError(e.message || String(e));
   }
 }
@@ -2329,6 +2340,7 @@ const ROOKIE_CLASS_BANNERS = {
   2023: { label: 'Weak',    note: 'Shallow class; QB-heavy, limited elite skill talent' },
   2024: { label: 'Strong',  note: 'Deep TE/WR class; Nabers, Odunze, Bowers headlined' },
   2025: { label: 'Average', note: 'Balanced across positions; several boom/bust prospects' },
+  2026: { label: 'Unknown', note: 'Class TBD — update after NFL Draft' },
 };
 function getPickValue(season, round, bucket) {
   const pv = S.fcPickValues[String(season)];
@@ -2415,7 +2427,7 @@ function mveProjectedPickBucket(teamProfile, season) {
   }
 
   // Far-future picks are inherently less predictable
-  const yearGap = Math.max(0, parseInt(season) - new Date().getFullYear() - 1);
+  const yearGap = Math.max(0, parseInt(season) - fantasyYear() - 1);
   if (yearGap >= B.futureGapPenalty) confidence = confidence === 'high' ? 'medium' : 'low';
 
   return { bucket, confidence, source: 'projected', score: Math.round(score) };
@@ -2453,7 +2465,7 @@ const _CLASS_BASELINE = { top3: 6000, mid5: 3500, late4: 2200 };
 // For the current year rookies are actually in FC with years_exp=0.
 // For future years, falls back to manual ROOKIE_CLASS_PROFILES overrides.
 function getClassProfile(year) {
-  const curYear = new Date().getFullYear();
+  const curYear = fantasyYear();
   if (parseInt(year) !== curYear) {
     return ROOKIE_CLASS_PROFILES[parseInt(year)] || _RCLASS_DEFAULT;
   }
@@ -2503,7 +2515,7 @@ function getClassProfile(year) {
 // Auto-generate the Rookie Board banner for any year.
 // Historical years use static text; current year is computed live.
 function getClassBanner(year) {
-  if (parseInt(year) !== new Date().getFullYear()) {
+  if (parseInt(year) !== fantasyYear()) {
     return ROOKIE_CLASS_BANNERS[parseInt(year)] || null;
   }
 
@@ -2690,7 +2702,7 @@ function getPickContext(pickKey, league) {
   const bkt = getPickBucketForKey(pickKey);
   const bucket = (bkt && bkt.bucket) || 'Mid';
   const conf   = (bkt && bkt.confidence) || 'low';
-  const curYear = new Date().getFullYear();
+  const curYear = fantasyYear();
   const yearGap = Math.max(0, parseInt(season) - curYear);
   const n = league ? Object.keys(league.rosterMap).length : 12;
 
@@ -4582,7 +4594,7 @@ function drawRoster(side, rosterId) {
       const bktBadge = knownSlot
         ? `<span style="font-size:.55rem;padding:1px 5px;border-radius:3px;background:rgba(210,153,34,.15);color:#d29922;font-weight:700;letter-spacing:.02em">1.${String(knownSlot).padStart(2,'0')}</span>`
         : (bkt ? pickBucketHtml(bkt.bucket, bkt.confidence) : '');
-      const srcNote  = !knownSlot && bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > new Date().getFullYear()
+      const srcNote  = !knownSlot && bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid' && p.season > fantasyYear()
         ? `<span style="font-size:.52rem;color:var(--muted);margin-left:3px">Proj</span>` : '';
       // Rich context for 1st-round picks
       const ctx = !knownSlot && p.round === 1 ? getPickContext(p.key, league) : null;
@@ -4646,7 +4658,7 @@ function mveLeaguePickBuckets(league) {
 
 function applyFutureGap(bkt, season) {
   if (!bkt) return null;
-  const yearGap = Math.max(0, parseInt(season) - new Date().getFullYear() - 1);
+  const yearGap = Math.max(0, parseInt(season) - fantasyYear() - 1);
   if (yearGap < PICK_BUCKET_CFG.futureGapPenalty) return bkt;
   const confidence = bkt.confidence === 'high' ? 'medium' : 'low';
   return { ...bkt, confidence };
@@ -4668,7 +4680,7 @@ function getPickValueByKey(key) {
   const round = parseInt(pts[1]);
   // 1st-round current-year: use board-driven value when board is populated
   if (round === 1) {
-    const season = pts[0], curYear = new Date().getFullYear();
+    const season = pts[0], curYear = fantasyYear();
     if (parseInt(season) === curYear) {
       const slots = getRookieBoardSlots();
       if (slots.length >= 6) {
@@ -5504,7 +5516,7 @@ function updateProposal() {
   const hasBucketedPicks = [...S.tradeA.picks, ...S.tradeB.picks].some(k => {
     const bkt = getPickBucketForKey(k); return bkt && bkt.source === 'projected' && bkt.bucket !== 'Mid';
   });
-  const _curYr = new Date().getFullYear();
+  const _curYr = fantasyYear();
   const hasBoardPicks = pickCount > 0 && getRookieBoardSlots().length >= 6 &&
     [...S.tradeA.picks, ...S.tradeB.picks].some(k => parseInt(k.split('_')[0]) === _curYr && parseInt(k.split('_')[1]) === 1);
   const pickSrcNote = pickCount > 0
@@ -5890,7 +5902,7 @@ function renderRookieBoard() {
   }
 
   const league = ld();
-  const curYear = new Date().getFullYear();
+  const curYear = fantasyYear();
 
   // Rookies = years_exp === 0 (Sleeper back-fills this after loadSleeperPlayers), skill positions, positive value
   const rookies = S.fcValues
@@ -7805,13 +7817,13 @@ function mveTradeTargets(myRosterId, theirRosterId, league) {
     const hasPicks = myProf.pickValue > 15000;
     if (iAmContender) {
       const base = `Offer: your ${player.pos} depth`;
-      return hasPicks ? base + ` + ${new Date().getFullYear() + 1} 1st` : base + ' + 2nd round pick';
+      return hasPicks ? base + ` + ${fantasyYear() + 1} 1st` : base + ' + 2nd round pick';
     }
     if (iAmRebuilder) {
       const vet = myProf.all.find(p => parseInt(p.age) >= 28 && p.tier <= 3 && p.pid !== player.pid);
       return vet ? `Offer: ${vet.name} + pick` : 'Offer: veteran with remaining value';
     }
-    return hasPicks ? `Offer: depth player + ${new Date().getFullYear() + 1} pick` : 'Offer: roster depth';
+    return hasPicks ? `Offer: depth player + ${fantasyYear() + 1} pick` : 'Offer: roster depth';
   }
 
   return theirProf.all
