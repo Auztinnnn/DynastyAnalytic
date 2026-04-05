@@ -40,7 +40,7 @@
     .btn:hover { opacity: .85; }
 
     /* MAIN */
-    main { padding: 24px; max-width: 1200px; margin: 0 auto 0 214px; }
+    main { padding: 24px; margin-left: 214px; }
 
     /* LOADING */
     #loading { text-align: center; padding: 60px 20px; color: var(--muted); }
@@ -1526,6 +1526,193 @@
       0%   { box-shadow: 0 0 0    rgba(63,185,80,0); }
       50%  { box-shadow: 0 0 10px rgba(63,185,80,.7); }
       100% { box-shadow: 0 0 6px  rgba(63,185,80,.5); }
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       RESPONSIVE LAYOUT SYSTEM v2
+       Mobile-first → Tablet → Laptop → Desktop → Ultra-wide
+
+       BREAKPOINTS
+       ≤ 640px   Mobile      – drawer nav, stacked everything
+         641–768 Small tablet – existing mobile block still covers this
+        769–1024 Tablet       – drawer nav, 2-col cards, full-width trade
+       1025–1440 Laptop       – fixed sidebar, fluid content, same density
+       1441–1920 Desktop      – wider sidebar, centered 1440px content max
+          1921+  Ultra-wide   – expands content cap to 1600px
+
+       LAYOUT RULE (1025px+)
+       main padding = max(24px, (100vw − sidebar − content-max) / 2)
+       At narrow viewports: evaluates negative → clamped to 24px (no change).
+       At wide viewports: grows symmetrically so content never exceeds
+       --content-max, naturally centering the content column.
+    ══════════════════════════════════════════════════════════ */
+
+    /* ── Layout tokens ─────────────────────────────────────── */
+    :root {
+      --sidebar-w:   214px;
+      --content-max: 1440px;
+    }
+
+    /* ── Fluid main: auto-centers content on wide screens ───── */
+    @media (min-width: 1025px) {
+      main {
+        padding: 28px max(24px, calc((100vw - var(--sidebar-w) - var(--content-max)) / 2));
+      }
+      /* New-season rollforward banner aligns with content column */
+      #new-season-banner {
+        margin-left: var(--sidebar-w);
+        padding-inline: max(24px, calc((100vw - var(--sidebar-w) - var(--content-max)) / 2));
+      }
+    }
+
+    /* ══ TABLET  769px – 1024px ═══════════════════════════════
+       Sidebar becomes a slide-out drawer (same as mobile).
+       Component layout stays 2-column — not squeezed.
+    ═══════════════════════════════════════════════════════════ */
+    @media (min-width: 769px) and (max-width: 1024px) {
+
+      /* Show mobile topbar / hamburger */
+      #mobile-topbar { display: flex; }
+      #nav-close-btn { display: block; }
+
+      /* Sidebar: off-canvas drawer */
+      header {
+        position: fixed; left: 0; top: 0;
+        width: 260px; height: 100vh;
+        transform: translateX(-110%);
+        transition: transform .22s ease;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+        border-bottom: none;
+        overflow-y: auto; overflow-x: hidden;
+        padding: 0; z-index: 200;
+        background: linear-gradient(180deg, #192338 0%, #111827 100%);
+      }
+      header.nav-open {
+        transform: translateX(0);
+        box-shadow: 4px 0 28px rgba(0,0,0,.5);
+      }
+      .logo {
+        padding: 14px 16px;
+        display: flex; align-items: center; justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+        font-size: 1rem; flex-shrink: 0;
+      }
+      nav { padding: 6px 0; overflow-x: hidden; flex: none; }
+      nav button {
+        padding: 13px 16px; font-size: .88rem;
+        border-left: 2px solid transparent; border-bottom: none;
+        justify-content: flex-start; min-height: 44px;
+      }
+      nav button.active {
+        border-left-color: var(--accent);
+        border-bottom-color: transparent;
+        background: linear-gradient(90deg, rgba(74,158,255,.15), rgba(74,158,255,.04));
+        color: var(--accent);
+      }
+      .nav-shortcut { display: none; }
+      .league-controls {
+        flex-direction: column; gap: 6px;
+        padding: 12px 14px;
+        border-top: 1px solid var(--border);
+      }
+      /* iOS: 16px prevents viewport zoom on input focus */
+      .league-controls input { width: 100%; font-size: 16px; min-height: 44px; padding: 0 10px; }
+      .btn { width: 100%; min-height: 44px; font-size: .88rem; }
+
+      /* Data-sources: collapsible in drawer */
+      #data-sources-toggle { cursor: pointer; }
+      #data-sources-panel  { max-height: 0; overflow: hidden; transition: max-height .2s ease; }
+      #data-sources-panel.ds-open { max-height: 220px; }
+      #data-sources-toggle .ds-arrow      { transform: rotate(-90deg); }
+      #data-sources-toggle.ds-open .ds-arrow { transform: rotate(0deg); }
+
+      /* Overlay active on tap-outside */
+      #mobile-overlay.active { display: block; }
+
+      /* Main: full-width, clear topbar */
+      main { margin-left: 0; padding: 20px 18px; }
+      #new-season-banner { margin-left: 0; }
+
+      /* Sub-tabs: scroll horizontally if they overflow */
+      .sub-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .sub-tab  { white-space: nowrap; }
+
+      /* ── Tablet component layout ──────────────────────────── */
+
+      /* Trade: single-column panels, stacked */
+      .trade-layout    { grid-template-columns: 1fr; gap: 10px; }
+      .trade-sides     { grid-template-columns: 1fr; gap: 10px; }
+      .trade-divider   { flex-direction: row; padding-top: 0; }
+      .trade-roster    { max-height: 240px; }
+      .trade-v2-layout { grid-template-columns: 1fr; }
+      .trade-v2-list-h { max-height: 240px; }
+
+      /* Scouting: stay 2-col */
+      .scout-top-grid   { grid-template-columns: 1fr 1fr; }
+      .scout-needs-grid { grid-template-columns: repeat(2, 1fr); }
+
+      /* Card grids: 3 columns on tablet */
+      .card-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+
+      /* Franchise / roster: 2-col */
+      .franchise-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .rosters-grid   { grid-template-columns: repeat(2, 1fr); }
+      .player-grid    { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .wrapped-grid   { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+      /* Rivalry, rivalry cards: 2-col */
+      .rivalry-grid { grid-template-columns: repeat(2, 1fr); }
+
+      /* Tables: touch-friendly horizontal scroll */
+      .table-wrap { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+
+      /* Charts: taller to use freed horizontal space */
+      .chart-wrap canvas { height: 400px !important; }
+
+      /* Section spacing: more breathing room than mobile */
+      .section       { margin-bottom: 24px; }
+      .section-title { font-size: .92rem; }
+    }
+
+    /* ══ DESKTOP  1441px – 1920px ═════════════════════════════
+       Slightly wider sidebar. Content column is centered and
+       capped at --content-max. Denser, taller panels.
+    ═══════════════════════════════════════════════════════════ */
+    @media (min-width: 1441px) {
+      :root { --sidebar-w: 224px; --content-max: 1440px; }
+
+      /* Sidebar: 10px wider for breathing room */
+      header { width: 224px; }
+      main   { margin-left: 224px; }
+
+      /* Trade panels: show more players without scrolling */
+      .trade-v2-list-h { max-height: 560px; }
+      .trade-roster    { max-height: 480px; }
+
+      /* Card grids: crisper column sizing at desktop density */
+      .card-grid      { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+      .franchise-grid { gap: 18px; }
+      .player-grid    { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+      .wrapped-grid   { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+      .rosters-grid   { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+
+      /* Charts: taller at desktop */
+      .chart-wrap canvas { height: 440px !important; }
+
+      /* Spacing: more generous between sections */
+      .section { margin-bottom: 36px; }
+
+      /* Franchise stat labels: wider for readability */
+      .franchise-stat-label { width: 90px; }
+    }
+
+    /* ══ ULTRA-WIDE  1921px+ ══════════════════════════════════
+       Expand content cap to 1600px — prevents the 1440px column
+       from becoming an island of whitespace on 27"–32" monitors.
+    ═══════════════════════════════════════════════════════════ */
+    @media (min-width: 1921px) {
+      :root { --content-max: 1600px; }
     }
   </style>
 </head>
