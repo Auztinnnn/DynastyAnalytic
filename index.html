@@ -7282,7 +7282,6 @@ function renderFranchiseIntel() {
 
       ${prof.actions.length ? `<div>${actHtml}</div>` : ''}
       ${teamExplain.length ? `<div style="margin-top:5px"><div class="explain-chips">${teamExplain.slice(0,4).map(r=>`<span class="explain-chip">${r}</span>`).join('')}</div></div>` : ''}
-      <button onclick="openTradeFinder(${prof.rosterId})" style="margin-top:8px;width:100%;background:rgba(88,166,255,.1);color:var(--accent);border:1px solid rgba(88,166,255,.25);border-radius:6px;padding:5px 10px;font-size:.72rem;font-weight:600;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(88,166,255,.18)'" onmouseout="this.style.background='rgba(88,166,255,.1)'">🔍 Trade Finder</button>
     </div>`;
   });
 
