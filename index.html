@@ -5960,18 +5960,18 @@ function updateProposal() {
   {
     const assetsA = S.tradeA.players.length + S.tradeA.picks.length; // A gives
     const assetsB = S.tradeB.players.length + S.tradeB.picks.length; // B gives
-    // Density = value per asset received
-    const densA = assetsB > 0 ? vB / assetsB : 0; // A receives vB across assetsB pieces
+    // Density = value per asset received by each side
+    const densA = assetsB > 0 ? vB / assetsB : 0; // A receives vB spread across assetsB pieces
     const densB = assetsA > 0 ? vA / assetsA : 0;
     const densDiff = Math.abs(densA - densB) / (Math.max(densA, densB) || 1);
     let strVerdict = 'Even', strNote = '', strColor = MUTED;
     if (densDiff > .12) {
       const betterDens = densA > densB ? nameA : nameB;
-      const moreAssets = assetsB > assetsA ? nameA : nameB; // who receives more pieces
-      const fewer = assetsB > assetsA ? assetsB : assetsA;
-      const more  = assetsB > assetsA ? assetsA : assetsB;
+      // X-for-1 note: the side giving X pieces and receiving 1 is consolidating
+      const givesMany = assetsA > assetsB ? assetsA : assetsB; // larger asset count (giving side)
+      const givesOne  = assetsA > assetsB ? assetsB : assetsA; // smaller asset count
       strVerdict = `Favors ${betterDens}`;
-      strNote = fewer > 1 && more === 1 ? `${fewer}-for-1 consolidation` : `value density`;
+      strNote = givesMany > 1 && givesOne === 1 ? `${givesMany}-for-1 consolidation` : 'value density';
       strColor = GREEN;
     }
     layers.push(layerRow('Structure', strVerdict, strColor, strNote));
@@ -6005,8 +6005,12 @@ function updateProposal() {
     const clsFitNote = clsLabelA && clsLabelB ? (() => {
       const aIsContr = clsLabelA === 'Contender' || clsLabelA === 'Fringe';
       const bIsContr = clsLabelB === 'Contender' || clsLabelB === 'Fringe';
+      const aIsReb = clsLabelA === 'Rebuilder';
+      const bIsReb = clsLabelB === 'Rebuilder';
       if (aIsContr && contWinner === nameA) return `fits ${nameA}'s window`;
       if (bIsContr && contWinner === nameB) return `fits ${nameB}'s window`;
+      if (aIsReb && rebWinner === nameA) return `aligns with ${nameA}'s rebuild`;
+      if (bIsReb && rebWinner === nameB) return `aligns with ${nameB}'s rebuild`;
       return '';
     })() : '';
     layers.push(layerRow('Team Fit', fitVerdict, fitColor, clsFitNote || fitNote));
@@ -6014,8 +6018,8 @@ function updateProposal() {
 
   // Layer 5 — Sentiment (KTC market signal)
   if (S.ktcAvailable && (S.tradeA.players.length || S.tradeB.players.length)) {
-    const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0) + pickValA;
-    const ktcB = S.tradeB.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0) + pickValB;
+    const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
+    const ktcB = S.tradeB.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
     const ktcDiff = Math.abs(ktcA - ktcB) / (Math.max(ktcA, ktcB) || 1);
     const ktcVerdict = ktcDiff < .05 ? 'Even'
       : ktcB > ktcA ? `Favors ${nameA}` : `Favors ${nameB}`;
