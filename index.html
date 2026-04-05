@@ -8316,7 +8316,7 @@ function renderDraftHistory() {
     } else if (realizationPct >= 110) {
       grade = 'hit';     gradeColor = 'var(--green)';  gradeLabel = '✅ Hit';        letterGrade = 'B';
     } else if (realizationPct >= 80) {
-      grade = 'neutral'; gradeColor = 'var(--muted)';  gradeLabel = '⚖️ Neutral';   letterGrade = 'C';
+      grade = 'neutral'; gradeColor = 'var(--muted)';  gradeLabel = '⚖️ Solid';     letterGrade = 'C';
     } else {
       grade = 'bust';    gradeColor = 'var(--red)';    gradeLabel = '❌ Bust';       letterGrade = 'D';
     }
@@ -8450,7 +8450,7 @@ function renderDraftHistory() {
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:.72rem">
         <span style="padding:2px 8px;border-radius:4px;background:rgba(255,215,0,.15);color:#ffd700;font-weight:700">⭐ Elite Hit</span><span style="color:var(--muted)">≥ 140% of expected slot value</span>
         <span style="padding:2px 8px;border-radius:4px;background:rgba(63,185,80,.15);color:var(--green);font-weight:700">✅ Hit</span><span style="color:var(--muted)">≥ 110% of expected</span>
-        <span style="padding:2px 8px;border-radius:4px;background:rgba(125,133,144,.15);color:var(--muted);font-weight:700">⚖️ Neutral</span><span style="color:var(--muted)">80% – 110% of expected</span>
+        <span style="padding:2px 8px;border-radius:4px;background:rgba(125,133,144,.15);color:var(--muted);font-weight:700">⚖️ Solid</span><span style="color:var(--muted)">80% – 110% of expected</span>
         <span style="padding:2px 8px;border-radius:4px;background:rgba(248,81,73,.15);color:var(--red);font-weight:700">❌ Bust</span><span style="color:var(--muted)">&lt; 80% of expected</span>
       </div>
       <div class="table-wrap">
