@@ -4926,9 +4926,11 @@ function generateTradeProposal() {
   const picksB   = teamPicksWithValue(ridB);
 
   // Score a proposal: lower = better
-  // Rewards: value balance, need severity fills, sell signal clearing, team-direction fit
+  // Rewards: value balance, severity × starter-impact need fills, sell signal clearing, team-direction fit
   const flexOffA = getFlexOffset(profA);
   const flexOffB = getFlexOffset(profB);
+  const isContender = clsA === 'Contender';
+  const isRebuilderCalc = clsA === 'Rebuild' || clsA === 'Rebuilding';
   function scoreProposal(sideA, sideB) {
     const valA = sideA.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0);
     const valB = sideB.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0);
@@ -4937,15 +4939,28 @@ function generateTradeProposal() {
     if (imbalance > 0.35) return Infinity;
 
     let needsScore = 0;
-    // Severity-weighted need fills
+    // Severity × starter-impact weighted need fills
     sideB.filter(x => !x.isPick).forEach(p => { needsScore += needFillScore(p, profA, clsA, flexOffA); });
     sideA.filter(x => !x.isPick).forEach(p => { needsScore += needFillScore(p, profB, clsB, flexOffB); });
     // Reward clearing sell signals
     sideA.filter(x => !x.isPick && (x.actionTag === 'Sell' || x.actionTag === 'Shop')).forEach(() => needsScore += 1);
     sideB.filter(x => !x.isPick && (x.actionTag === 'Sell' || x.actionTag === 'Shop')).forEach(() => needsScore += 1);
-    // Contender bias: value incoming elite talent more
-    const isContender = clsA === 'Contender' || clsA === 'Fringe';
-    if (isContender) sideB.filter(x => !x.isPick && x.tier <= 2).forEach(() => needsScore += 0.5);
+    // Contender: bonus for incoming players that actually start
+    if (isContender) {
+      sideB.filter(x => !x.isPick).forEach(p => { needsScore += getStarterImpact(p, profA) * 0.8; });
+    }
+    // Rebuilder: penalize selling elite assets without receiving insulation
+    if (isRebuilderCalc) {
+      const eliteOut = sideA.filter(x => !x.isPick && x.tier <= 2);
+      if (eliteOut.length) {
+        const hasInsulation = sideB.some(x =>
+          x.isPick ||
+          (!x.isPick && (parseInt(x.age) || 99) <= 25) ||
+          (!x.isPick && x.actionTag === 'Speculative')
+        );
+        if (!hasInsulation) needsScore -= 2.0;
+      }
+    }
 
     return imbalance * 10 - needsScore;
   }
@@ -5120,39 +5135,65 @@ function generateTradeProposal() {
 // ── TRADE INTELLIGENCE HELPERS ───────────────────────────────
 // Tier-weighted depth scoring: rewards elite players, discounts fringe depth.
 const TRADE_TIER_W = { 1: 1.0, 2: 0.75, 3: 0.5, 4: 0.25, 5: 0.1 };
-// Lineup starter slots per position (baseline; FLEX adds to RB/WR in practice)
+// Fallback starter slots (used when leagueCtx not available)
 const POS_STARTER_SLOTS = { QB: 1, RB: 2, WR: 3, TE: 1 };
+
+// Extract starter slots from profile with league-format awareness
+function getPosStarterSlots(prof, pos) {
+  const ctx = prof.leagueCtx;
+  if (!ctx) return POS_STARTER_SLOTS[pos] || 1;
+  return { QB: ctx.starterQB, RB: ctx.starterRB, WR: ctx.starterWR, TE: ctx.starterTE }[pos] || 1;
+}
+
 // Tier-weighted depth per position (single elite TE >> two fringe TEs)
 function getEffectiveDepth(prof, pos) {
   return (prof.byPos[pos] || []).reduce((s, p) => s + (TRADE_TIER_W[p.tier] || 0.05), 0);
 }
-// 3-state evaluation: 'weakness' | 'neutral' | 'strength'
-const POS_DEPTH_THRESH = {
-  QB: { min: 0.9, str: 1.5 },
-  RB: { min: 1.8, str: 2.6 },
-  WR: { min: 1.8, str: 2.6 },
-  TE: { min: 0.9, str: 1.5 },
-};
+
+// Format-aware depth thresholds — SF leagues demand stronger QB depth, TEP raises TE bar, flex widens RB/WR bar
+function getPosDepthThresh(prof, pos) {
+  const ctx = prof.leagueCtx || {};
+  const nFlex = ctx.nFlex || 0;
+  return {
+    QB: { min: ctx.isSF ? 1.3 : 0.9, str: ctx.isSF ? 2.0 : 1.5 },
+    RB: { min: 1.8 + nFlex * 0.15, str: 2.6 + nFlex * 0.15 },
+    WR: { min: 1.8 + nFlex * 0.2,  str: 2.6 + nFlex * 0.2  },
+    TE: { min: ctx.isTEP ? 1.2 : 0.9, str: ctx.isTEP ? 1.8 : 1.5 },
+  }[pos] || { min: 0.9, str: 1.5 };
+}
+
+// 3-state evaluation: 'weakness' | 'neutral' | 'strength' — league-format aware
 function getPositionStrengthState(prof, pos) {
   const depth = getEffectiveDepth(prof, pos);
-  const { min, str } = POS_DEPTH_THRESH[pos] || { min: 0.9, str: 1.5 };
+  const { min, str } = getPosDepthThresh(prof, pos);
   return depth >= str ? 'strength' : depth >= min ? 'neutral' : 'weakness';
 }
-// Surplus = tier-weighted value of bench pieces beyond starter slots
+
+// Surplus = tier-weighted value of bench pieces beyond league-aware starter slots
 function getSurplusScore(prof, pos) {
   const arr = prof.byPos[pos] || [];
-  return arr.slice(POS_STARTER_SLOTS[pos] || 1)
+  return arr.slice(getPosStarterSlots(prof, pos))
             .reduce((s, p) => s + (TRADE_TIER_W[p.tier] || 0.05), 0);
 }
+
 // Need severity based on depth state + team direction
+// Contender: upgrades neutral positions to moderate; Fringe: cautious (weakness=moderate, neutral=optional)
 function getNeedSeverity(prof, pos, clsLabel) {
   const state = getPositionStrengthState(prof, pos);
-  const isContender = clsLabel === 'Contender' || clsLabel === 'Fringe';
+  const isContender = clsLabel === 'Contender';
+  const isFringe    = clsLabel === 'Fringe';
   const isRebuilder = clsLabel === 'Rebuild' || clsLabel === 'Rebuilding' || clsLabel === 'Retool';
-  if (state === 'weakness') return (isRebuilder && pos === 'RB') ? 'moderate' : 'strong';
-  if (state === 'neutral')  return isContender ? 'moderate' : 'optional';
+  if (state === 'weakness') {
+    if (isRebuilder && pos === 'RB') return 'moderate'; // rebuilders don't urgently need RB
+    if (isFringe) return 'moderate';                    // fringe: don't over-commit at weak spots
+    return 'strong';
+  }
+  if (state === 'neutral') {
+    return isContender ? 'moderate' : 'optional';       // fringe/mid treat neutral as optional
+  }
   return 'none';
 }
+
 // FLEX offset: strong skill position partially reduces urgency at the other
 function getFlexOffset(prof) {
   const wrS = getPositionStrengthState(prof, 'WR');
@@ -5162,40 +5203,60 @@ function getFlexOffset(prof) {
   if (rbS === 'strength' && wrS !== 'strength') off.WR = 0.4;
   return off;
 }
-// Score for how well an incoming player fills a need (accounts for severity + FLEX offset)
+
+// Starter impact: would this incoming player actually start for this team?
+// Returns 1.0 if lineup upgrade, ~0 if deep bench, fractional if near-starter
+function getStarterImpact(player, prof) {
+  if (player.isPick) return 0;
+  const pos = player.pos;
+  const posArr = prof.byPos[pos] || [];
+  const slots = getPosStarterSlots(prof, pos);
+  const currentStarters = posArr.slice(0, slots);
+  const worstStarter = currentStarters.length >= slots ? currentStarters[currentStarters.length - 1] : null;
+  if (!worstStarter || player.neutral > worstStarter.neutral) return 1.0; // clear starter
+  // Near-starter bench: diminishing credit the further below the starter line
+  const gap = (worstStarter.neutral - player.neutral) / Math.max(worstStarter.neutral, 1);
+  return Math.max(0, 0.4 - gap * 0.8);
+}
+
+// Score for how well an incoming player fills a need (accounts for severity + FLEX offset + starter impact)
 function needFillScore(player, prof, clsLabel, flexOffset) {
   if (player.isPick) return 0;
   const sev = getNeedSeverity(prof, player.pos, clsLabel);
   const sevMap = { strong: 2.5, moderate: 1.5, optional: 0.5, none: 0 };
-  return Math.max(0, (sevMap[sev] || 0) - (flexOffset[player.pos] || 0));
+  const impact = getStarterImpact(player, prof); // 0–1: does player actually start?
+  const base = (sevMap[sev] || 0) - (flexOffset[player.pos] || 0);
+  // Blend: need severity × lineup impact (prevents star-hoarding for bench slots)
+  return Math.max(0, base * (0.4 + impact * 0.6));
 }
-// Smart trade pool — tier-weighted depth awareness + team-direction protection.
-// Replaces the old count-based RB/WR guard.
+
+// Smart trade pool — tier-weighted depth + team-direction protection.
+// Fringe teams get extra protection on depth; rebuilders allow elite anchors.
 function buildTradePool(prof) {
   const clsLabel = prof.classification?.label || 'Mid-Tier';
   const isRebuilder = clsLabel === 'Rebuild' || clsLabel === 'Rebuilding';
+  const isFringe    = clsLabel === 'Fringe';
   return prof.all.filter(p => {
     if (p.actionTag === 'Cornerstone' || p.neutral <= 0) return false;
     if (p.actionTag === 'Sell' || p.actionTag === 'Shop') return true;
     const pos = p.pos;
     const posArr = prof.byPos[pos] || [];
-    const rank = posArr.indexOf(p) + 1; // 1-based
+    const rank = posArr.indexOf(p) + 1;
     const state = getPositionStrengthState(prof, pos);
-    const slots = POS_STARTER_SLOTS[pos] || 1;
+    const slots = getPosStarterSlots(prof, pos);
     if (state === 'weakness') {
-      // Protect all meaningful starters; allow only clear fringe depth
-      return rank > Math.max(slots + 1, 2);
+      return rank > Math.max(slots + 1, 2); // protect all starters + 1 at weak positions
     }
     if (state === 'neutral') {
-      // Protect elite starters; bench and non-elite are tradeable
-      if (rank <= slots && p.tier <= 2) return false;
+      if (rank <= slots && p.tier <= 2) return false;               // protect elite starters always
+      if (isFringe && rank <= slots && p.tier <= 3) return false;   // fringe: also protect T3 starters
       return true;
     }
-    // strength: position has real surplus — protect only elite #1 anchor
+    // strength: allow most pieces; protect only elite anchor unless rebuilding
     if (rank === 1 && p.tier === 1 && !isRebuilder) return false;
+    if (isFringe && rank <= 2 && p.tier <= 2) return false;         // fringe: protect both elite pieces
     return true;
   }).sort((a, b) => {
-    // Sell/Shop always surface first, then by value
     const tag = { Sell: 0, Shop: 1 };
     return (tag[a.actionTag] ?? 2) - (tag[b.actionTag] ?? 2) || b.neutral - a.neutral;
   });
@@ -5300,22 +5361,37 @@ function generateArchetypeProposals(ridA, ridB, league) {
   }
 
   // Score = imbalance * 10 - needsFilled (lower = better)
-  // Uses severity-weighted need fills + team-direction bonuses
+  // Uses severity × starter-impact need fills + team-direction modifiers
   const flexOffA = getFlexOffset(profA);
   const flexOffB = getFlexOffset(profB);
+  const isRebuilderA = clsA === 'Rebuild' || clsA === 'Rebuilding';
   function scoreOf(sA, sB) {
     const vA = valOf(sA), vB = valOf(sB);
     if (!vA || !vB) return Infinity;
     const imb = Math.abs(vA - vB) / Math.max(vA, vB);
     if (imb > 0.35) return Infinity;
     let n = 0;
-    // Incoming players scored by how severely they fill a need
+    // Severity × starter-impact weighted need fills
     sB.filter(x => !x.isPick).forEach(p => { n += needFillScore(p, profA, clsA, flexOffA); });
     sA.filter(x => !x.isPick).forEach(p => { n += needFillScore(p, profB, clsB, flexOffB); });
-    // Bonus for clearing sell signals (reducing risk exposure)
+    // Bonus for clearing sell signals
     sA.filter(x => !x.isPick && (x.actionTag === 'Sell' || x.actionTag === 'Shop')).forEach(() => n += 1);
-    // Contender bias: reward incoming elite talent more
-    if (isContenderA) sB.filter(x => !x.isPick && x.tier <= 2).forEach(() => n += 0.5);
+    // Contender: bonus for incoming players that actually start (not flat tier bonus)
+    if (isContenderA) {
+      sB.filter(x => !x.isPick).forEach(p => { n += getStarterImpact(p, profA) * 0.8; });
+    }
+    // Rebuilder: penalize proposals that sell elite anchors without returning insulation
+    if (isRebuilderA) {
+      const eliteOut = sA.filter(x => !x.isPick && x.tier <= 2);
+      if (eliteOut.length) {
+        const hasInsulation = sB.some(x =>
+          x.isPick ||
+          (!x.isPick && (parseInt(x.age) || 99) <= 25) ||
+          (!x.isPick && x.actionTag === 'Speculative')
+        );
+        if (!hasInsulation) n -= 2.0; // demand youth/picks for elite sells
+      }
+    }
     return imb * 10 - n;
   }
 
@@ -6834,13 +6910,25 @@ function mveTeamProfile(rosterId, league) {
   const sellHighList   = all.filter(p=>p.actionTag==='Sell'||p.actionTag==='Shop');
   const speculativeList= all.filter(p=>p.actionTag==='Speculative').slice(0,5);
 
+  // League format context for trade intelligence helpers
+  const leagueCtx = {
+    isSF,
+    isTEP: (league?.league?.scoring_settings?.rec_te || 1.0) > 1.0,
+    nFlex, nQB, nRB, nWR, nTE,
+    teamCount: Object.keys(league?.rosterMap || {}).length,
+    starterQB: isSF ? nQB+1 : nQB || 1,
+    starterRB: nRB + Math.ceil(nFlex*0.35) || 2,
+    starterWR: nWR + Math.ceil(nFlex*0.55) || 3,
+    starterTE: nTE || 1,
+  };
+
   return {
     rosterId: parseInt(rosterId), teamName: roster.teamName, avatar: roster.avatar,
     all, byPos, starters,
     totalValue, starterValue, totalVAR, varByPos,
     weightedAge: Math.round(weightedAge*10)/10,
     pickValue, picks, avgLiq, replLvl,
-    classification, actions,
+    classification, actions, leagueCtx,
     cornerstones, sellHighList, speculativeList,
   };
 }
