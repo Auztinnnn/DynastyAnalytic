@@ -1093,24 +1093,29 @@
     }
 
     /* ── SEASON STATS TABLE ──────────────────────────────────── */
-    .stats-tbl-wrap { overflow-x:auto; overflow-y:auto; max-height:72vh; border:1px solid var(--border); border-radius:10px; }
-    .stats-tbl { width:100%; border-collapse:collapse; font-size:.77rem; }
+    .stats-tbl-wrap {
+      overflow-x: auto; overflow-y: auto; max-height: 72vh;
+      border: 1px solid var(--border); border-radius: 10px;
+      overscroll-behavior: contain;
+    }
+    .stats-tbl { width:100%; border-collapse:collapse; font-size:.77rem; table-layout:fixed; }
     .stats-tbl thead th {
       padding:7px 9px; background:var(--surface2); color:var(--muted);
       font-size:.63rem; text-transform:uppercase; letter-spacing:.05em;
       cursor:pointer; white-space:nowrap; border-bottom:2px solid var(--border);
       position:sticky; top:0; z-index:2; user-select:none; transition:color .12s;
+      overflow:hidden; text-overflow:ellipsis;
     }
     .stats-tbl thead th:hover { color:var(--text); }
     .stats-tbl thead th.srt-on { color:var(--accent); }
     .stats-tbl thead th.srt-on::after { content:' ▾'; font-size:.55rem; }
     .stats-tbl thead th.srt-asc::after { content:' ▴'; font-size:.55rem; }
     .stats-tbl thead .col-player { position:sticky; left:0; z-index:3; text-align:left; }
-    .stats-tbl tbody td { padding:5px 9px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .stats-tbl tbody td { padding:5px 9px; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; user-select:none; }
     .stats-tbl tbody tr:hover td { background:rgba(255,255,255,.025); }
     .stats-tbl .col-player-cell {
       position:sticky; left:0; background:var(--surface); z-index:1;
-      padding:5px 9px; min-width:158px;
+      padding:5px 9px;
     }
     .stats-tbl .pcell-inner { display:flex; align-items:center; gap:8px; }
     .stats-tbl .pcell-hs { width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0; background:var(--surface2); }
@@ -1812,13 +1817,15 @@
     <div id="sub-teams-rosters" class="sub-panel"><div id="rosters-content"></div></div>
   </div>
 
-  <!-- PLAYERS: Weekly Stats + Market Trends -->
+  <!-- PLAYERS -->
   <div id="tab-players" class="tab-content">
     <div class="sub-tabs">
-      <button class="sub-tab active" data-sub="weekly" onclick="switchSubTab('players','weekly')">Weekly Stats</button>
+      <button class="sub-tab active" data-sub="cards" onclick="switchSubTab('players','cards')">Player Cards</button>
+      <button class="sub-tab" data-sub="topn"  onclick="switchSubTab('players','topn')">Top N</button>
+      <button class="sub-tab" data-sub="stats" onclick="switchSubTab('players','stats')">Season Stats</button>
       <button class="sub-tab" data-sub="trends" onclick="switchSubTab('players','trends')">Market Trends</button>
     </div>
-    <div id="sub-players-weekly" class="sub-panel active"><div id="players-content"></div></div>
+    <div id="sub-players-main" class="sub-panel active"><div id="players-content"></div></div>
     <div id="sub-players-trends" class="sub-panel"><div id="trends-content"></div></div>
   </div>
 
@@ -4067,21 +4074,6 @@ let statsSort       = { key:'fpts_pg', dir:-1 };
 let statsPosFilter  = 'ALL';
 let statsRowsCache  = null; // { rows, leagueId }
 
-function buildPlayersViewBtns() {
-  const s = v =>
-    `cursor:pointer;padding:4px 12px;border-radius:4px;font-size:.78rem;border:1px solid var(--border);margin-right:4px;` +
-    (playersView === v
-      ? 'background:var(--accent);color:#fff;border-color:var(--accent)'
-      : 'background:var(--surface2);color:var(--muted)');
-  return `<button onclick="setPlayersView('cards')" style="${s('cards')}">Player Cards</button>` +
-         `<button onclick="setPlayersView('topn')"  style="${s('topn')}">Top N Tracker</button>` +
-         `<button onclick="setPlayersView('stats')" style="${s('stats')}">Season Stats</button>`;
-}
-
-function setPlayersView(view) {
-  playersView = view;
-  renderPlayersTab();
-}
 
 function setTopN(n) {
   topNFilter = n;
@@ -4212,11 +4204,8 @@ function renderPlayersTab() {
     </div>`;
   }
 
-  const viewBtns = buildPlayersViewBtns();
-
   document.getElementById('players-content').innerHTML = `
     <div class="players-controls" style="flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:6px">${viewBtns}</div>
       ${controls}
     </div>
     <div id="players-grid" class="inline-loading"><div class="spinner" style="margin:0 auto 8px"></div>Loading...</div>`;
@@ -4632,8 +4621,15 @@ function renderStatsTable() {
     <span style="color:#3fb950">Green</span> = top 25% · <span style="color:var(--muted)">Faded</span> = bottom 25% · Click any column to sort
   </div>`;
 
+  const colgroup = `<colgroup>
+    <col style="width:162px">
+    <col style="width:100px">
+    ${pos === 'ALL' ? '<col style="width:46px">' : ''}
+    ${cols.map(() => '<col style="width:72px">').join('')}
+  </colgroup>`;
+
   grid.className = '';
-  grid.innerHTML = note + `<div class="stats-tbl-wrap"><table class="stats-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
+  grid.innerHTML = note + `<div class="stats-tbl-wrap"><table class="stats-tbl">${colgroup}<thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
 
   // Restore scroll position after re-render
   if (prevScroll > 0) {
@@ -9206,7 +9202,7 @@ async function openPlayerModal(pid) {
 const subTabState = {
   league:  'overview',
   teams:   'power',
-  players: 'weekly',
+  players: 'cards',
   history: 'wrapped',
 };
 
@@ -9216,7 +9212,10 @@ function switchSubTab(mainTab, subId) {
   const tabEl = document.getElementById('tab-'+mainTab);
   if (!tabEl) return;
   tabEl.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
-  const panel = document.getElementById('sub-'+mainTab+'-'+subId);
+  // Player Cards / Top N / Season Stats all share the same panel
+  const panelId = (mainTab === 'players' && ['cards','topn','stats'].includes(subId))
+    ? 'sub-players-main' : 'sub-'+mainTab+'-'+subId;
+  const panel = document.getElementById(panelId);
   if (panel) panel.classList.add('active');
   tabEl.querySelectorAll('.sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === subId));
   renderForSubTab(mainTab, subId);
@@ -9230,7 +9229,10 @@ function renderForSubTab(mainTab, subId) {
   else if (k==='teams/power')       renderPowerRankings();
   else if (k==='teams/franchise')   renderFranchiseIntel();
   else if (k==='teams/rosters')     renderRosters();
-  else if (k==='players/weekly')    renderPlayersTab();
+  else if (k==='players/cards')  { playersView = 'cards';  renderPlayersTab(); }
+  else if (k==='players/topn')   { playersView = 'topn';   renderPlayersTab(); }
+  else if (k==='players/stats')  { playersView = 'stats';  renderPlayersTab(); }
+  else if (k==='players/weekly') { playersView = 'cards';  renderPlayersTab(); } // legacy
   else if (k==='players/trends')    renderTrendsTab();
   else if (k==='trade/calculator')   renderTradeCalculator();
   else if (k==='trade/scouting')     renderLeagueScouting();
@@ -10065,11 +10067,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (saved && validTabs.includes(saved)) currentTab = saved;
   // Restore saved sub-tab selections
   Object.keys(subTabState).forEach(main => {
-    const s = localStorage.getItem('fo_subtab_'+main);
+    let s = localStorage.getItem('fo_subtab_'+main);
+    // Migrate legacy 'weekly' value to 'cards'
+    if (main === 'players' && s === 'weekly') s = 'cards';
     if (s) {
       subTabState[main] = s;
-      // Activate saved sub-panel and button
-      const panel = document.getElementById('sub-'+main+'-'+s);
+      // Player Cards / Top N / Season Stats share the same panel
+      const panelId = (main === 'players' && ['cards','topn','stats'].includes(s))
+        ? 'sub-players-main' : 'sub-'+main+'-'+s;
+      const panel = document.getElementById(panelId);
       const tabEl  = document.getElementById('tab-'+main);
       if (panel && tabEl) {
         tabEl.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
