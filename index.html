@@ -1855,7 +1855,7 @@ async function loadChain(startId) {
 
   const [fcRes, tradedPicksRes, ktcRes] = await Promise.allSettled([
     fetch(`${FC_BASE}?isDynasty=true&numQbs=${isSF?2:1}&ppr=${ppr}`, { signal: AbortSignal.timeout(15000) }).then(r => r.json()),
-    fetch(`${BASE}/league/${S.currentLeagueId}/traded_picks`).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(`${BASE}/league/${S.currentLeagueId}/traded_picks`, { signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : []).catch(() => []),
     // Try local snapshot first (same-origin, no CORS); fall back to live KTC
     fetch(`./ktc-latest.json?d=${new Date().toISOString().slice(0,10)}`, { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : Promise.reject())
