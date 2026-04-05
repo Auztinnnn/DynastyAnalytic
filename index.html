@@ -2068,6 +2068,10 @@ async function loadSleeperPlayers() {
       }
     });
 
+    // years_exp was just back-filled — invalidate the rookie board cache
+    // (cache key is S.fcValues.length, which didn't change, so we force-bust it)
+    _rbCache = null; _rbCacheLen = -1;
+
     if (currentTab === 'players') renderPlayersTab();
     if (currentTab === 'rosters') renderRosters();
     // Re-draw trade rosters so K/DEF show correctly as soon as meta is ready
@@ -2371,8 +2375,8 @@ function getClassProfile(year) {
         const ktc = S.ktcBySleeperId[String(fc.player.sleeperId)];
         return (ktc - fc.value) / fc.value;
       }));
-      // Small nudge: 30% weight on KTC sentiment, capped at +/-5%
-      const nudge = 1 + clamp(divergence * 0.3, -0.05, 0.05);
+      // Small nudge: 20% weight on KTC sentiment, capped at +/-3%
+      const nudge = 1 + clamp(divergence * 0.2, -0.03, 0.03);
       topEndStrength  *= nudge;
       overallStrength *= nudge;
       depthStrength   *= nudge;
@@ -2620,7 +2624,7 @@ function getPickContext(pickKey, league) {
 
   const gapDecay      = Math.pow(0.85, Math.max(yearGap, 0));
   const sentMult      = bucket === 'Early' ? cp.topEndStrength : bucket === 'Late' ? cp.depthStrength : cp.overallStrength;
-  const uDiscount     = yearGap <= 0 ? 0 : conf === 'high' ? 0.04 : conf === 'medium' ? 0.06 : 0.09;
+  const uDiscount     = yearGap <= 0 ? 0 : conf === 'high' ? 0.03 : conf === 'medium' ? 0.04 : 0.07;
   const neutralValue  = Math.round(fcBase * gapDecay * sentMult * (1 - uDiscount));
   return {
     neutralValue, source: 'class-sentiment', round, season, bucket, confidence: conf,
