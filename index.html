@@ -4903,43 +4903,9 @@ function generateTradeProposal() {
   const sigCls = { Cornerstone:'signal-cornerstone', Buy:'signal-buy', Sell:'signal-sell', Hold:'signal-hold', Speculative:'signal-stash', Shop:'signal-hold' };
   const TOLERANCE = 0.14; // within 14% = balanced
 
-  // Weak positions: no solid starter, OR depth shortage for multi-start positions
-  // QB/TE start 1 → need 1 solid. RB/WR start 2 → need 2 solid for depth.
-  const POS_DEPTH_MIN = { QB: 1, RB: 2, WR: 2, TE: 1 };
-  function weakPositions(prof) {
-    return ['QB','RB','WR','TE'].filter(pos => {
-      const arr = prof.byPos[pos] || [];
-      if (!arr.length || arr[0].tier >= 3) return true;
-      return arr.filter(p => p.tier <= 3).length < (POS_DEPTH_MIN[pos] || 1);
-    });
-  }
-  const weakA = weakPositions(profA);
-  const weakB = weakPositions(profB);
-
-  // Tradeable players: Sell/Shop first, then positional surplus, then any non-Cornerstone depth
-  function tradeablePlayers(prof, weakOther) {
-    const result = [];
-    prof.all.forEach(p => {
-      if (p.actionTag === 'Cornerstone') return;
-      let reason = null;
-      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') { reason = p.actionTag; }
-      else if (weakOther.includes(p.pos)) {
-        const posArr = prof.byPos[p.pos] || [];
-        if (posArr.length >= 3 && p.tier <= 3) reason = 'Surplus';
-        else if (posArr.length >= 2 && p.tier >= 3) reason = 'Depth';
-      } else if (p.tier >= 3 && p.actionTag !== 'Cornerstone') {
-        // Only mark as Depth tradeable if team has genuine surplus (3+) at this position
-        const posArr = prof.byPos[p.pos] || [];
-        if (posArr.length >= 3) reason = 'Depth';
-      }
-      if (reason) result.push({ ...p, reason });
-    });
-    return result.sort((a, b) => {
-      // Prioritize sell/shop, then surplus, then by value
-      const pri = { Sell:0, Shop:1, Surplus:2, Depth:3 };
-      return (pri[a.reason]||3) - (pri[b.reason]||3) || b.neutral - a.neutral;
-    });
-  }
+  // Tier-weighted weak position detection (replaces count-based POS_DEPTH_MIN)
+  const weakA = ['QB','RB','WR','TE'].filter(pos => getPositionStrengthState(profA, pos) === 'weakness');
+  const weakB = ['QB','RB','WR','TE'].filter(pos => getPositionStrengthState(profB, pos) === 'weakness');
 
   // Available picks with value
   function teamPicksWithValue(rosterId) {
@@ -4951,28 +4917,35 @@ function generateTradeProposal() {
     }).filter(pk => pk.val > 0).sort((a, b) => b.val - a.val);
   }
 
-  const playersA = tradeablePlayers(profA, weakB);
-  const playersB = tradeablePlayers(profB, weakA);
+  // Use smart trade pool (tier-weighted depth + team-direction awareness)
+  const clsA = profA.classification?.label || 'Mid-Tier';
+  const clsB = profB.classification?.label || 'Mid-Tier';
+  const playersA = buildTradePool(profA);
+  const playersB = buildTradePool(profB);
   const picksA   = teamPicksWithValue(ridA);
   const picksB   = teamPicksWithValue(ridB);
 
   // Score a proposal: lower = better
-  // Rewards: value balance, needs addressed, sell signal cleared
+  // Rewards: value balance, need severity fills, sell signal clearing, team-direction fit
+  const flexOffA = getFlexOffset(profA);
+  const flexOffB = getFlexOffset(profB);
   function scoreProposal(sideA, sideB) {
     const valA = sideA.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0);
     const valB = sideB.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0);
     if (!valA || !valB) return Infinity;
-    const maxVal = Math.max(valA, valB);
-    const imbalance = Math.abs(valA - valB) / maxVal;
-    if (imbalance > 0.35) return Infinity; // too uneven to consider
+    const imbalance = Math.abs(valA - valB) / Math.max(valA, valB);
+    if (imbalance > 0.35) return Infinity;
 
     let needsScore = 0;
-    // Reward filling a weak position for each side
-    sideB.filter(x => !x.isPick).forEach(p => { if (weakA.includes(p.pos)) needsScore += 2; });
-    sideA.filter(x => !x.isPick).forEach(p => { if (weakB.includes(p.pos)) needsScore += 2; });
+    // Severity-weighted need fills
+    sideB.filter(x => !x.isPick).forEach(p => { needsScore += needFillScore(p, profA, clsA, flexOffA); });
+    sideA.filter(x => !x.isPick).forEach(p => { needsScore += needFillScore(p, profB, clsB, flexOffB); });
     // Reward clearing sell signals
-    sideA.filter(x => !x.isPick && (x.reason === 'Sell' || x.reason === 'Shop')).forEach(() => needsScore += 1);
-    sideB.filter(x => !x.isPick && (x.reason === 'Sell' || x.reason === 'Shop')).forEach(() => needsScore += 1);
+    sideA.filter(x => !x.isPick && (x.actionTag === 'Sell' || x.actionTag === 'Shop')).forEach(() => needsScore += 1);
+    sideB.filter(x => !x.isPick && (x.actionTag === 'Sell' || x.actionTag === 'Shop')).forEach(() => needsScore += 1);
+    // Contender bias: value incoming elite talent more
+    const isContender = clsA === 'Contender' || clsA === 'Fringe';
+    if (isContender) sideB.filter(x => !x.isPick && x.tier <= 2).forEach(() => needsScore += 0.5);
 
     return imbalance * 10 - needsScore;
   }
@@ -5050,11 +5023,12 @@ function generateTradeProposal() {
     if (sweetsA.length) candidates.push({ sideA: sweetsA, sideB: [b], score: scoreProposal(sweetsA, [b]) });
   }
 
-  // Sort and dedupe (skip proposals with same players)
+  // Sort and dedupe (skip proposals with same players + enforce anchor diversity)
   candidates.sort((a, b) => a.score - b.score);
 
-  // Pick top 3 distinct proposals
+  // Pick top 3 distinct proposals with anchor diversity
   const seen = new Set();
+  const anchorUsed = {};
   const proposals = [];
   for (const c of candidates) {
     if (c.score === Infinity) continue;
@@ -5062,7 +5036,14 @@ function generateTradeProposal() {
                   '|',
                   ...c.sideB.map(x => x.isPick ? x.key : x.pid).sort()].join(',');
     if (seen.has(key)) continue;
+    // Anchor diversity: limit reuse of same top outgoing player
+    const anchor = c.sideA.filter(x => !x.isPick).sort((a,b) => b.neutral - a.neutral)[0]?.pid;
+    if (anchor && (anchorUsed[anchor] || 0) >= 2) continue;
     seen.add(key);
+    if (anchor) anchorUsed[anchor] = (anchorUsed[anchor] || 0) + 1;
+    // Attach explanation and archetype label
+    c.explanation = getProposalExplanation(c.sideA, c.sideB, profA, profB, clsA);
+    c.label = getProposalArchetypeLabel(c.sideA, c.sideB, profA, weakA, weakB, clsA);
     proposals.push(c);
     if (proposals.length >= 3) break;
   }
@@ -5106,16 +5087,17 @@ function generateTradeProposal() {
     const balanced = imbalance <= 0.08;
     const favorsTxt = vA > vB * 1.06 ? `Favors ${profA.teamName}` : vB > vA * 1.06 ? `Favors ${profB.teamName}` : 'Even';
     const balColor = balanced ? 'var(--green)' : imbalance <= TOLERANCE ? 'var(--yellow)' : '#f85149';
-    const label = idx === 0 ? 'Best Match' : idx === 1 ? 'Alternative' : 'Option 3';
+    const label = prop.label || (idx === 0 ? 'Best Match' : idx === 1 ? 'Alternative' : 'Option 3');
 
     return `<div class="proposal-card" id="proposal-card-${idx}" onclick="applyProposal(${idx})" style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${prop.explanation ? '4px' : '8px'}">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="font-size:.68rem;font-weight:700;color:var(--accent)">${label}</span>
           <span id="proposal-check-${idx}" style="display:none;font-size:.6rem;background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3);border-radius:10px;padding:1px 8px;font-weight:700">✓ Applied</span>
         </div>
         <span style="font-size:.63rem;font-weight:600;color:${balColor}">${favorsTxt} · ${vA.toLocaleString()} ↔ ${vB.toLocaleString()}</span>
       </div>
+      ${prop.explanation ? `<div style="font-size:.62rem;color:var(--muted);font-style:italic;margin-bottom:7px;line-height:1.4">${prop.explanation}</div>` : ''}
       <div class="proposal-sides">
         <div class="proposal-side">
           <div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${profA.teamName} sends</div>
@@ -5135,6 +5117,136 @@ function generateTradeProposal() {
   </div>`;
 }
 
+// ── TRADE INTELLIGENCE HELPERS ───────────────────────────────
+// Tier-weighted depth scoring: rewards elite players, discounts fringe depth.
+const TRADE_TIER_W = { 1: 1.0, 2: 0.75, 3: 0.5, 4: 0.25, 5: 0.1 };
+// Lineup starter slots per position (baseline; FLEX adds to RB/WR in practice)
+const POS_STARTER_SLOTS = { QB: 1, RB: 2, WR: 3, TE: 1 };
+// Tier-weighted depth per position (single elite TE >> two fringe TEs)
+function getEffectiveDepth(prof, pos) {
+  return (prof.byPos[pos] || []).reduce((s, p) => s + (TRADE_TIER_W[p.tier] || 0.05), 0);
+}
+// 3-state evaluation: 'weakness' | 'neutral' | 'strength'
+const POS_DEPTH_THRESH = {
+  QB: { min: 0.9, str: 1.5 },
+  RB: { min: 1.8, str: 2.6 },
+  WR: { min: 1.8, str: 2.6 },
+  TE: { min: 0.9, str: 1.5 },
+};
+function getPositionStrengthState(prof, pos) {
+  const depth = getEffectiveDepth(prof, pos);
+  const { min, str } = POS_DEPTH_THRESH[pos] || { min: 0.9, str: 1.5 };
+  return depth >= str ? 'strength' : depth >= min ? 'neutral' : 'weakness';
+}
+// Surplus = tier-weighted value of bench pieces beyond starter slots
+function getSurplusScore(prof, pos) {
+  const arr = prof.byPos[pos] || [];
+  return arr.slice(POS_STARTER_SLOTS[pos] || 1)
+            .reduce((s, p) => s + (TRADE_TIER_W[p.tier] || 0.05), 0);
+}
+// Need severity based on depth state + team direction
+function getNeedSeverity(prof, pos, clsLabel) {
+  const state = getPositionStrengthState(prof, pos);
+  const isContender = clsLabel === 'Contender' || clsLabel === 'Fringe';
+  const isRebuilder = clsLabel === 'Rebuild' || clsLabel === 'Rebuilding' || clsLabel === 'Retool';
+  if (state === 'weakness') return (isRebuilder && pos === 'RB') ? 'moderate' : 'strong';
+  if (state === 'neutral')  return isContender ? 'moderate' : 'optional';
+  return 'none';
+}
+// FLEX offset: strong skill position partially reduces urgency at the other
+function getFlexOffset(prof) {
+  const wrS = getPositionStrengthState(prof, 'WR');
+  const rbS = getPositionStrengthState(prof, 'RB');
+  const off = {};
+  if (wrS === 'strength' && rbS !== 'strength') off.RB = 0.4;
+  if (rbS === 'strength' && wrS !== 'strength') off.WR = 0.4;
+  return off;
+}
+// Score for how well an incoming player fills a need (accounts for severity + FLEX offset)
+function needFillScore(player, prof, clsLabel, flexOffset) {
+  if (player.isPick) return 0;
+  const sev = getNeedSeverity(prof, player.pos, clsLabel);
+  const sevMap = { strong: 2.5, moderate: 1.5, optional: 0.5, none: 0 };
+  return Math.max(0, (sevMap[sev] || 0) - (flexOffset[player.pos] || 0));
+}
+// Smart trade pool — tier-weighted depth awareness + team-direction protection.
+// Replaces the old count-based RB/WR guard.
+function buildTradePool(prof) {
+  const clsLabel = prof.classification?.label || 'Mid-Tier';
+  const isRebuilder = clsLabel === 'Rebuild' || clsLabel === 'Rebuilding';
+  return prof.all.filter(p => {
+    if (p.actionTag === 'Cornerstone' || p.neutral <= 0) return false;
+    if (p.actionTag === 'Sell' || p.actionTag === 'Shop') return true;
+    const pos = p.pos;
+    const posArr = prof.byPos[pos] || [];
+    const rank = posArr.indexOf(p) + 1; // 1-based
+    const state = getPositionStrengthState(prof, pos);
+    const slots = POS_STARTER_SLOTS[pos] || 1;
+    if (state === 'weakness') {
+      // Protect all meaningful starters; allow only clear fringe depth
+      return rank > Math.max(slots + 1, 2);
+    }
+    if (state === 'neutral') {
+      // Protect elite starters; bench and non-elite are tradeable
+      if (rank <= slots && p.tier <= 2) return false;
+      return true;
+    }
+    // strength: position has real surplus — protect only elite #1 anchor
+    if (rank === 1 && p.tier === 1 && !isRebuilder) return false;
+    return true;
+  }).sort((a, b) => {
+    // Sell/Shop always surface first, then by value
+    const tag = { Sell: 0, Shop: 1 };
+    return (tag[a.actionTag] ?? 2) - (tag[b.actionTag] ?? 2) || b.neutral - a.neutral;
+  });
+}
+// Short human-readable explanation for a proposal
+function getProposalExplanation(sideA, sideB, profA, profB, clsA) {
+  const posOut = [...new Set(sideA.filter(x => !x.isPick).map(x => x.pos))];
+  const posIn  = [...new Set(sideB.filter(x => !x.isPick).map(x => x.pos))];
+  const hasPicksIn  = sideB.some(x => x.isPick);
+  const hasPicksOut = sideA.some(x => x.isPick);
+  const isSelling   = sideA.filter(x => !x.isPick).some(x => x.actionTag === 'Sell' || x.actionTag === 'Shop');
+  const isContender = clsA === 'Contender' || clsA === 'Fringe';
+  const isRebuilder = clsA === 'Rebuild' || clsA === 'Rebuilding';
+  const surplusPos  = posOut.find(pos => getPositionStrengthState(profA, pos) === 'strength');
+  const needPos     = posIn.find(pos => getPositionStrengthState(profA, pos) === 'weakness');
+  const modNeedPos  = posIn.find(pos => getPositionStrengthState(profA, pos) === 'neutral');
+  if (surplusPos && needPos)  return `Uses ${surplusPos} surplus to address ${needPos} weakness.`;
+  if (isSelling && needPos)   return `Moves aging asset to upgrade at ${needPos}.`;
+  if (isSelling && hasPicksIn) return `Converts sell-high player into future capital.`;
+  if (hasPicksOut && needPos)  return `Invests picks to fill ${needPos} need immediately.`;
+  if (isContender && needPos)  return `Win-now upgrade at ${needPos} — accepts short-term cost.`;
+  if (isRebuilder && hasPicksIn) return `Sells veteran value for rebuild capital.`;
+  if (sideA.length >= 2 && sideB.filter(x => !x.isPick).length === 1) {
+    const star = sideB.filter(x => !x.isPick)[0];
+    return `Consolidates depth into ${star?.pos || ''} starter upgrade.`;
+  }
+  if (modNeedPos) return `Improves depth and competition at ${modNeedPos}.`;
+  if (posOut.length && posIn.length && posOut[0] !== posIn[0])
+    return `Swaps ${posOut.join('/')} for ${posIn.join('/')} to reshape roster.`;
+  return 'Balanced value exchange with positional upside.';
+}
+// Archetype label for interactive calculator proposals
+function getProposalArchetypeLabel(sideA, sideB, profA, weakA, weakB, clsA) {
+  const hasPicksOut = sideA.some(x => x.isPick);
+  const hasPicksIn  = sideB.some(x => x.isPick);
+  const isSelling   = sideA.filter(x => !x.isPick).some(x => x.actionTag === 'Sell' || x.actionTag === 'Shop');
+  const isContender = clsA === 'Contender' || clsA === 'Fringe';
+  const isRebuilder = clsA === 'Rebuild' || clsA === 'Rebuilding';
+  const playersIn   = sideB.filter(x => !x.isPick);
+  const playersOut  = sideA.filter(x => !x.isPick);
+  const fillsNeed   = playersIn.some(p => weakA.includes(p.pos));
+  if (hasPicksOut && fillsNeed)                       return 'Win-Now Buy';
+  if (isRebuilder && hasPicksIn && isSelling)         return 'Rebuild-Friendly';
+  if (isSelling && !hasPicksIn && fillsNeed)          return 'Starter Upgrade';
+  if (hasPicksIn && !hasPicksOut && !fillsNeed)       return 'Pick-Based Return';
+  if (playersOut.length >= 2 && playersIn.length === 1) return 'Consolidation';
+  if (fillsNeed)                                      return 'Starter Upgrade';
+  if (hasPicksOut)                                    return 'Safer Structure';
+  return 'Best Match';
+}
+
 // ── ARCHETYPE-BASED PROPOSAL ENGINE ──────────────────────────
 // Generates one best candidate per trade archetype for a given pair.
 // Diversity is enforced at the archetype level before any value-based ranking,
@@ -5145,34 +5257,20 @@ function generateArchetypeProposals(ridA, ridB, league) {
   if (!profA || !profB) return [];
 
   const clsA = profA.classification?.label || 'Mid-Tier';
+  const clsB = profB.classification?.label || 'Mid-Tier';
   const isContenderA = clsA === 'Contender' || clsA === 'Fringe';
 
-  // QB/TE start 1 → need 1 solid. RB/WR start 2 → need 2 solid for depth.
-  const POS_DEPTH_MIN2 = { QB: 1, RB: 2, WR: 2, TE: 1 };
+  // Tier-weighted weak position detection (replaces count-based POS_DEPTH_MIN)
   function weakPos(prof) {
-    return ['QB','RB','WR','TE'].filter(pos => {
-      const arr = prof.byPos[pos] || [];
-      if (!arr.length || arr[0].tier >= 3) return true;
-      return arr.filter(p => p.tier <= 3).length < (POS_DEPTH_MIN2[pos] || 1);
-    });
+    return ['QB','RB','WR','TE'].filter(pos => getPositionStrengthState(prof, pos) === 'weakness');
   }
   const weakA = weakPos(profA);
   const weakB = weakPos(profB);
 
-  // All non-Cornerstone players sorted descending by value.
-  // Protect RB/WR depth: don't offer players at thin RB/WR positions
-  // (QB upgrade trades are intentional; elite TEs are Cornerstone-protected).
-  function tradePool(prof, ownWeak) {
-    return prof.all.filter(p => {
-      if (p.actionTag === 'Cornerstone' || p.neutral <= 0) return false;
-      if (p.actionTag === 'Sell' || p.actionTag === 'Shop') return true;
-      if ((p.pos === 'RB' || p.pos === 'WR') && ownWeak.includes(p.pos)) {
-        const posArr = prof.byPos[p.pos] || [];
-        if (posArr.length < 3) return false; // thin — protect depth
-      }
-      return true;
-    }).sort((a, b) => b.neutral - a.neutral);
-  }
+  // Smart trade pool — uses tier-weighted depth + team-direction awareness
+  const poolA = buildTradePool(profA);
+  const poolB = buildTradePool(profB);
+
   function teamPicks(rosterId) {
     return getTeamPickList(rosterId).map(pk => {
       const bkt = getPickBucketForKey(pk.key);
@@ -5181,7 +5279,6 @@ function generateArchetypeProposals(ridA, ridB, league) {
     }).filter(pk => pk.val > 0).sort((a, b) => b.val - a.val);
   }
 
-  const poolA = tradePool(profA, weakA), poolB = tradePool(profB, weakB);
   const picksA = teamPicks(ridA),  picksB = teamPicks(ridB);
 
   function valOf(items) { return items.reduce((s, x) => s + (x.isPick ? x.val : x.neutral), 0); }
@@ -5203,15 +5300,22 @@ function generateArchetypeProposals(ridA, ridB, league) {
   }
 
   // Score = imbalance * 10 - needsFilled (lower = better)
+  // Uses severity-weighted need fills + team-direction bonuses
+  const flexOffA = getFlexOffset(profA);
+  const flexOffB = getFlexOffset(profB);
   function scoreOf(sA, sB) {
     const vA = valOf(sA), vB = valOf(sB);
     if (!vA || !vB) return Infinity;
     const imb = Math.abs(vA - vB) / Math.max(vA, vB);
     if (imb > 0.35) return Infinity;
     let n = 0;
-    sB.filter(x => !x.isPick && weakA.includes(x.pos)).forEach(() => n += 2);
-    sA.filter(x => !x.isPick && weakB.includes(x.pos)).forEach(() => n += 2);
+    // Incoming players scored by how severely they fill a need
+    sB.filter(x => !x.isPick).forEach(p => { n += needFillScore(p, profA, clsA, flexOffA); });
+    sA.filter(x => !x.isPick).forEach(p => { n += needFillScore(p, profB, clsB, flexOffB); });
+    // Bonus for clearing sell signals (reducing risk exposure)
     sA.filter(x => !x.isPick && (x.actionTag === 'Sell' || x.actionTag === 'Shop')).forEach(() => n += 1);
+    // Contender bias: reward incoming elite talent more
+    if (isContenderA) sB.filter(x => !x.isPick && x.tier <= 2).forEach(() => n += 0.5);
     return imb * 10 - n;
   }
 
@@ -5223,7 +5327,8 @@ function generateArchetypeProposals(ridA, ridB, league) {
   function push(archetype, label, sA, sB) {
     const sc = scoreOf(sA, sB);
     if (sc === Infinity) return false;
-    proposals.push({ sideA: sA, sideB: sB, archetype, label,
+    const explanation = getProposalExplanation(sA, sB, profA, profB, clsA);
+    proposals.push({ sideA: sA, sideB: sB, archetype, label, explanation,
       anchorOut: anchorOf(sA), anchorIn: anchorOf(sB),
       score: sc, ridA, ridB, profA, profB });
     return true;
@@ -5449,6 +5554,7 @@ function renderTradeProposalsTab() {
       <td style="padding:8px 10px;vertical-align:top;white-space:nowrap">
         <div style="font-size:.62rem;font-weight:700;color:var(--accent)">#${idx+1}</div>
         <div style="font-size:.6rem;font-weight:600;color:${labelColor};margin-top:2px;white-space:nowrap">${prop.label}</div>
+        ${prop.explanation ? `<div style="font-size:.55rem;color:var(--muted);font-style:italic;margin-top:3px;max-width:110px;white-space:normal;line-height:1.3">${prop.explanation}</div>` : ''}
       </td>
       <td style="padding:8px 8px;vertical-align:top">${prop.sideA.map(itemLine).join('')}</td>
       <td style="padding:8px 8px;vertical-align:top">${prop.sideB.map(itemLine).join('')}</td>
