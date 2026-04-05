@@ -26,7 +26,7 @@
     .card:active { background: var(--surface2); }
 
     /* SIDEBAR */
-    header { position: fixed; left: 0; top: 0; width: 214px; height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 200; overflow: hidden; }
+    header { position: fixed; left: 0; top: 0; width: 214px; height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 200; overflow: hidden; will-change: transform; }
     .logo { font-size: 1.05rem; font-weight: 700; color: var(--accent); padding: 4px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; flex-shrink: 0; }
     nav { display: flex; flex-direction: column; flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
     nav button { background: none; border: none; border-left: 2px solid transparent; color: var(--muted); font-size: .85rem; padding: 10px 12px 10px 16px; cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: color .15s, background .15s, border-color .15s; white-space: nowrap; width: 100%; }
@@ -1124,9 +1124,12 @@
     #roster-modal {
       position:fixed;inset:0;z-index:2000;
       display:flex;align-items:center;justify-content:center;
-      background:rgba(0,0,0,0);backdrop-filter:blur(0px);
+      background:rgba(0,0,0,0);
       pointer-events:none;
-      transition:background .25s,backdrop-filter .25s;
+      transition:background .25s;
+      /* backdrop-filter intentionally absent in closed state —
+         even blur(0) forces a full-screen compositing node on every
+         scroll frame, which is the primary cause of scroll jank. */
     }
     #roster-modal.open {
       background:rgba(0,0,0,.8);backdrop-filter:blur(10px);
