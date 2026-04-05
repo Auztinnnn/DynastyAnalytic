@@ -5858,11 +5858,14 @@ function updateProposal() {
     pctBEl.style.color = pct < .04 ? 'var(--muted)' : pctB > 0 ? 'var(--green)' : 'var(--red)';
   }
 
+  // ── Profiles (needed for starter impact + team fit layers) ──────
+  const profA = S.fcValues.length ? mveTeamProfile(S.tradeA.rosterId, league) : null;
+  const profB = S.fcValues.length ? mveTeamProfile(S.tradeB.rosterId, league) : null;
+  const clsLabelA = profA?.classification?.label || '';
+  const clsLabelB = profB?.classification?.label || '';
+
   // Arrows point toward winner; "Trade Favors" label
   const trashEl = document.getElementById('v2-trash-talk');
-  // Loser class label for smart trash talk context
-  const _loserClsA = S.fcValues.length ? (mveTeamProfile(S.tradeA.rosterId, league)?.classification?.label || '') : '';
-  const _loserClsB = S.fcValues.length ? (mveTeamProfile(S.tradeB.rosterId, league)?.classification?.label || '') : '';
   if (pct < .06) {
     if (arrowsEl) arrowsEl.textContent = '•';
     if (favLblEl) favLblEl.textContent = 'Fair Trade';
@@ -5870,11 +5873,11 @@ function updateProposal() {
   } else if (vB > vA) {
     if (arrowsEl) arrowsEl.innerHTML = '<span style="color:var(--green)">⟨⟨⟨</span>';
     if (favLblEl) favLblEl.textContent = 'Trade Favors';
-    if (trashEl) { const tt = tradeTrashTalk(pct, rB ? rB.teamName : 'B', rA ? rA.teamName : 'A', _loserClsA); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
+    if (trashEl) { const tt = tradeTrashTalk(pct, rB ? rB.teamName : 'B', rA ? rA.teamName : 'A', clsLabelA); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   } else {
     if (arrowsEl) arrowsEl.innerHTML = '<span style="color:var(--green)">⟩⟩⟩</span>';
     if (favLblEl) favLblEl.textContent = 'Trade Favors';
-    if (trashEl) { const tt = tradeTrashTalk(pct, rA ? rA.teamName : 'A', rB ? rB.teamName : 'B', _loserClsB); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
+    if (trashEl) { const tt = tradeTrashTalk(pct, rA ? rA.teamName : 'A', rB ? rB.teamName : 'B', clsLabelB); trashEl.textContent = tt.text; trashEl.style.color = tt.color; trashEl.style.display = 'block'; }
   }
 
   // Bar: left (green) = what Team A receives / total; right (red) = what Team B receives / total
@@ -5889,18 +5892,6 @@ function updateProposal() {
     if (Math.abs(barAW - 50) <= 5)  barWrapEl.classList.add('trade-bar-fair');
     else if (barAW >= 65)            barWrapEl.classList.add('trade-bar-lopsided-a');
     else if (barAW <= 35)            barWrapEl.classList.add('trade-bar-lopsided-b');
-  }
-
-  // ── Market Sentiment (KTC) ────────────────────────────────────
-  let ktcNote = '';
-  if (S.ktcAvailable && S.tradeA.players.length && S.tradeB.players.length) {
-    const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
-    const ktcB = S.tradeB.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0);
-    const ktcDiff = ktcA - ktcB;
-    const ktcFavors = Math.abs(ktcDiff) < 300 ? 'Even'
-      : ktcDiff > 0 ? (rA ? rA.teamName : 'Team A') : (rB ? rB.teamName : 'Team B');
-    const ktcLabel = Math.abs(ktcDiff) < 300 ? 'Market: Even' : `Market: Favors ${ktcFavors}`;
-    ktcNote = `<div style="font-size:.72rem;color:var(--muted)">${ktcLabel}</div>`;
   }
 
   // ── Pick source note ──────────────────────────────────────────
@@ -5918,43 +5909,149 @@ function updateProposal() {
           ? hasBucketedPicks ? 'FC RDP · 1st-round buckets from team strength' : 'FC RDP (mid estimate)'
           : 'tier defaults'}</div>` : '';
 
-  // ── Lens divergence (Win-now / Dynasty) ──────────────────────
-  let lensHtml = '';
-  if (S.fcValues.length > 0 && (S.tradeA.players.length || S.tradeB.players.length)) {
+  // ── Multi-layer verdict ────────────────────────────────────────
+  // Each layer returns { label, verdict, color } where verdict favors A, B, or is even.
+  // teamA receives sideB; teamB receives sideA.
+  const nameA = rA?.teamName || 'Team A', nameB = rB?.teamName || 'Team B';
+  const GREEN = 'var(--green)', YELLOW = 'var(--yellow)', MUTED = 'var(--muted)';
+
+  function layerRow(label, verdict, color, note) {
+    return `<div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <span style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;min-width:90px;flex-shrink:0">${label}</span>
+      <span style="font-size:.68rem;font-weight:600;color:${color}">${verdict}</span>
+      ${note ? `<span style="font-size:.6rem;color:var(--muted);margin-left:auto">${note}</span>` : ''}
+    </div>`;
+  }
+
+  const layers = [];
+
+  // Layer 1 — Market (already computed as vA/vB blended)
+  {
+    const mktVerdict = pct < .04 ? 'Even'
+      : vB > vA ? `Favors ${nameA}` : `Favors ${nameB}`;
+    const mktColor = pct < .04 ? MUTED : GREEN;
+    const mktNote = pct >= .04 ? `${Math.round(pct*100)}% gap` : '';
+    layers.push(layerRow('Market', mktVerdict, mktColor, mktNote));
+  }
+
+  // Layer 2 — Lineup Impact (starter-impact-adjusted value per side)
+  if (S.fcValues.length && profA && profB &&
+      (S.tradeA.players.length || S.tradeB.players.length)) {
+    let siA = pickValB, siB = pickValA; // what each side receives, picks at full value
+    S.tradeB.players.forEach(pid => {
+      const mv = mvePlayer(pid, league);
+      if (!mv) return;
+      siA += mv.neutral * (0.4 + getStarterImpact(mv, profA) * 0.6);
+    });
+    S.tradeA.players.forEach(pid => {
+      const mv = mvePlayer(pid, league);
+      if (!mv) return;
+      siB += mv.neutral * (0.4 + getStarterImpact(mv, profB) * 0.6);
+    });
+    const siDiff = Math.abs(siA - siB) / (Math.max(siA, siB) || 1);
+    const siVerdict = siDiff < .05 ? 'Even'
+      : siA > siB ? `Favors ${nameA}` : `Favors ${nameB}`;
+    const siNote = siDiff >= .05 ? 'accounts for lineup fit' : '';
+    layers.push(layerRow('Lineup Impact', siVerdict,
+      siDiff < .05 ? MUTED : GREEN, siNote));
+  }
+
+  // Layer 3 — Structure (consolidation vs fragmentation)
+  {
+    const assetsA = S.tradeA.players.length + S.tradeA.picks.length; // A gives
+    const assetsB = S.tradeB.players.length + S.tradeB.picks.length; // B gives
+    // Density = value per asset received
+    const densA = assetsB > 0 ? vB / assetsB : 0; // A receives vB across assetsB pieces
+    const densB = assetsA > 0 ? vA / assetsA : 0;
+    const densDiff = Math.abs(densA - densB) / (Math.max(densA, densB) || 1);
+    let strVerdict = 'Even', strNote = '', strColor = MUTED;
+    if (densDiff > .12) {
+      const betterDens = densA > densB ? nameA : nameB;
+      const moreAssets = assetsB > assetsA ? nameA : nameB; // who receives more pieces
+      const fewer = assetsB > assetsA ? assetsB : assetsA;
+      const more  = assetsB > assetsA ? assetsA : assetsB;
+      strVerdict = `Favors ${betterDens}`;
+      strNote = fewer > 1 && more === 1 ? `${fewer}-for-1 consolidation` : `value density`;
+      strColor = GREEN;
+    }
+    layers.push(layerRow('Structure', strVerdict, strColor, strNote));
+  }
+
+  // Layer 4 — Team Fit (contender vs rebuilder lens)
+  if (S.fcValues.length && (S.tradeA.players.length || S.tradeB.players.length)) {
     function mveSide(pids) {
       return pids.reduce((acc, pid) => {
         const mv = mvePlayer(pid, league);
         return {
           contender: acc.contender + (mv ? mv.contenderValue : (S.fcBySleeperId[String(pid)]?.value||0)),
-          rebuilder: acc.rebuilder + (mv ? mv.rebuilderValue : (S.fcBySleeperId[String(pid)]?.value||0)),
+          rebuilder:  acc.rebuilder  + (mv ? mv.rebuilderValue  : (S.fcBySleeperId[String(pid)]?.value||0)),
         };
       }, { contender:0, rebuilder:0 });
     }
-    const mA = mveSide(S.tradeA.players);
-    const mB = mveSide(S.tradeB.players);
+    const mA = mveSide(S.tradeA.players), mB = mveSide(S.tradeB.players);
     mA.contender += pickValA; mA.rebuilder += pickValA;
     mB.contender += pickValB; mB.rebuilder += pickValB;
-
-    const mainAWins = vA > vB;
-    const lensItems = [];
-    const cA = mB.contender, cB = mA.contender;
-    if ((cA > cB) !== mainAWins && Math.abs(cA - cB) > 300) {
-      lensItems.push(`Win-now: <strong>${cA > cB ? (rA?.teamName||'Team A') : (rB?.teamName||'Team B')}</strong>`);
-    }
-    const rA2 = mB.rebuilder, rB2 = mA.rebuilder;
-    if ((rA2 > rB2) !== mainAWins && Math.abs(rA2 - rB2) > 300) {
-      lensItems.push(`Dynasty: <strong>${rA2 > rB2 ? (rA?.teamName||'Team A') : (rB?.teamName||'Team B')}</strong>`);
-    }
-    if (lensItems.length)
-      lensHtml = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">${lensItems.join(' &nbsp;·&nbsp; ')}</div>`;
+    // A receives mB; B receives mA
+    const contWinner = mB.contender > mA.contender ? nameA : mA.contender > mB.contender ? nameB : null;
+    const rebWinner  = mB.rebuilder  > mA.rebuilder  ? nameA : mA.rebuilder  > mB.rebuilder  ? nameB : null;
+    const cDiff = Math.abs(mB.contender - mA.contender) / (Math.max(mB.contender, mA.contender) || 1);
+    const rDiff = Math.abs(mB.rebuilder  - mA.rebuilder)  / (Math.max(mB.rebuilder,  mA.rebuilder)  || 1);
+    let fitVerdict = 'Even', fitNote = '', fitColor = MUTED;
+    const parts = [];
+    if (cDiff > .06 && contWinner) parts.push(`Win-now: ${contWinner}`);
+    if (rDiff > .06 && rebWinner  && rebWinner !== contWinner) parts.push(`Rebuild: ${rebWinner}`);
+    if (parts.length) { fitVerdict = parts.join(' · '); fitColor = YELLOW; }
+    // If one team's actual classification aligns with a lens winner, note it
+    const clsFitNote = clsLabelA && clsLabelB ? (() => {
+      const aIsContr = clsLabelA === 'Contender' || clsLabelA === 'Fringe';
+      const bIsContr = clsLabelB === 'Contender' || clsLabelB === 'Fringe';
+      if (aIsContr && contWinner === nameA) return `fits ${nameA}'s window`;
+      if (bIsContr && contWinner === nameB) return `fits ${nameB}'s window`;
+      return '';
+    })() : '';
+    layers.push(layerRow('Team Fit', fitVerdict, fitColor, clsFitNote || fitNote));
   }
+
+  // Layer 5 — Sentiment (KTC market signal)
+  if (S.ktcAvailable && (S.tradeA.players.length || S.tradeB.players.length)) {
+    const ktcA = S.tradeA.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0) + pickValA;
+    const ktcB = S.tradeB.players.reduce((s,p) => s + (S.ktcBySleeperId[String(p)] || 0), 0) + pickValB;
+    const ktcDiff = Math.abs(ktcA - ktcB) / (Math.max(ktcA, ktcB) || 1);
+    const ktcVerdict = ktcDiff < .05 ? 'Even'
+      : ktcB > ktcA ? `Favors ${nameA}` : `Favors ${nameB}`;
+    layers.push(layerRow('Sentiment', ktcVerdict,
+      ktcDiff < .05 ? MUTED : YELLOW,
+      ktcDiff >= .05 ? 'KTC market' : ''));
+  }
+
+  // ── Bottom line interpretation ─────────────────────────────────
+  // Summarise the layer outcomes into a single readable sentence.
+  function bottomLine() {
+    const hasPlayers = S.tradeA.players.length && S.tradeB.players.length;
+    if (!hasPlayers) return '';
+    const assetsA = S.tradeA.players.length + S.tradeA.picks.length;
+    const assetsB = S.tradeB.players.length + S.tradeB.picks.length;
+    const isConsolidating = assetsB > assetsA + 1; // A receives fewer, stronger pieces
+    const mktFavorsA = vB > vA * 1.06, mktFavorsB = vA > vB * 1.06;
+    if (pct < .04 && !isConsolidating) return 'Fair on paper. Execution comes down to fit.';
+    if (isConsolidating && mktFavorsB) return `Paper favors ${nameB} but ${nameA} gets consolidated value — real utility may be closer.`;
+    if (isConsolidating && !mktFavorsA) return `${nameA} trades down in count for concentrated value. Usually favors the consolidating side in practice.`;
+    if (mktFavorsA && pct > .15) return `Clear market edge for ${nameA}. ${nameB} needs strong positional fit to justify.`;
+    if (mktFavorsB && pct > .15) return `Clear market edge for ${nameB}. ${nameA} needs strong positional fit to justify.`;
+    return 'Reasonably balanced — team fit and lineup impact are the tiebreakers.';
+  }
+  const blText = bottomLine();
 
   // ── Inject into detail panel ───────────────────────────────────
   const detEl = document.getElementById('v2-detail');
   if (detEl) {
-    const hasContent = lensHtml || ktcNote;
+    const layerHtml = layers.length
+      ? `<div style="margin-bottom:${blText?'6px':'0'}">${layers.join('')}</div>` : '';
+    const blHtml = blText
+      ? `<div style="font-size:.62rem;color:var(--muted);line-height:1.45;font-style:italic;padding-top:2px">${blText}</div>` : '';
+    const hasContent = layerHtml || blHtml || pickSrcNote;
     detEl.style.display = hasContent ? 'block' : 'none';
-    detEl.innerHTML = hasContent ? lensHtml + ktcNote : '';
+    detEl.innerHTML = hasContent ? layerHtml + blHtml + pickSrcNote : '';
   }
 }
 
