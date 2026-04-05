@@ -1590,6 +1590,9 @@
   </div>
 </header>
 
+<!-- New-season rollforward banner (hidden until a newer league is detected) -->
+<div id="new-season-banner" style="display:none;align-items:center;gap:10px;padding:8px 16px;background:rgba(56,189,248,.08);border-bottom:1px solid rgba(56,189,248,.2);font-size:.78rem;color:#7dd3fc"></div>
+
 <main>
   <div id="loading"><div class="spinner"></div><p>Loading league data...</p></div>
   <div id="error-msg"></div>
@@ -1795,9 +1798,82 @@ function setLoadingMsg(msg) {
   if (el) el.textContent = msg;
 }
 
+// ── FANTASY YEAR ─────────────────────────────────────────────
+// Dynasty season rolls forward on March 15: Super Bowl is done,
+// free agency / draft buzz begins. Keeps pick-year logic stable
+// through January–February when the calendar year has flipped but
+// the dynasty cycle hasn't.
+function fantasyYear() {
+  const now = new Date();
+  const m = now.getMonth(), d = now.getDate(); // month is 0-indexed
+  return (m > 2 || (m === 2 && d >= 15)) ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+// ── NEW-SEASON AUTO-DETECT ────────────────────────────────────
+// After loading a league, if its season is behind the current fantasy
+// year, search Sleeper for the next-season league by owner lookup.
+// Tries up to 3 roster owners to find a league whose previous_league_id
+// matches the currently loaded one.
+async function detectNewSeason() {
+  const league = S.leagues[S.currentLeagueId];
+  if (!league) return;
+  const fYear = fantasyYear();
+  if (parseInt(league.season) >= fYear) return;  // already on current season
+
+  // Don't nag if user already dismissed for this league+year
+  const dismissKey = `fo_season_dismissed_${S.currentLeagueId}_${fYear}`;
+  if (localStorage.getItem(dismissKey)) return;
+
+  const owners = [...new Set(
+    Object.values(league.rosterMap).map(r => r.ownerId).filter(Boolean)
+  )];
+
+  let newLeagueId = null;
+  for (const ownerId of owners.slice(0, 4)) {
+    try {
+      const leagues = await fetch(
+        `${BASE}/user/${ownerId}/leagues/nfl/${fYear}`,
+        { signal: AbortSignal.timeout(6000) }
+      ).then(r => r.ok ? r.json() : null);
+      if (!Array.isArray(leagues)) continue;
+      const match = leagues.find(l => l.previous_league_id === S.currentLeagueId);
+      if (match) { newLeagueId = match.league_id; break; }
+    } catch(e) { /* silently skip — non-critical */ }
+  }
+
+  if (!newLeagueId) return;
+  _showNewSeasonBanner(newLeagueId, fYear);
+}
+
+function _showNewSeasonBanner(newId, year) {
+  const el = document.getElementById('new-season-banner');
+  if (!el) return;
+  el.innerHTML =
+    `<span>📅 <strong>${year} season</strong> found on Sleeper</span>` +
+    `<button onclick="_loadNewSeason('${newId}')" style="margin-left:8px;padding:3px 10px;border-radius:5px;background:rgba(56,189,248,.15);color:#7dd3fc;border:1px solid rgba(56,189,248,.3);cursor:pointer;font-size:.75rem">Load ${year} League</button>` +
+    `<button onclick="_dismissNewSeason('${S.currentLeagueId}','${year}')" style="margin-left:4px;padding:3px 8px;border-radius:5px;background:none;color:var(--muted);border:1px solid var(--border);cursor:pointer;font-size:.75rem">Dismiss</button>`;
+  el.style.display = 'flex';
+}
+
+async function _loadNewSeason(newId) {
+  document.getElementById('new-season-banner').style.display = 'none';
+  const input = document.getElementById('leagueInput');
+  input.value = newId;
+  localStorage.setItem('fo_league_id', newId);
+  await initLoad();
+}
+
+function _dismissNewSeason(leagueId, year) {
+  localStorage.setItem(`fo_season_dismissed_${leagueId}_${year}`, '1');
+  document.getElementById('new-season-banner').style.display = 'none';
+}
+
 async function initLoad() {
   const id = document.getElementById('leagueInput').value.trim();
   if (!id) return;
+  // Persist league ID so it reloads automatically on next visit
+  localStorage.setItem('fo_league_id', id);
+  document.getElementById('new-season-banner').style.display = 'none';
   showLoading(true);
   try {
     setLoadingMsg('Connecting to Sleeper…');
@@ -1807,6 +1883,8 @@ async function initLoad() {
     // Load matchup weeks and Sleeper player data in the background
     loadMatchupsBackground();
     loadSleeperPlayers();
+    // Non-blocking: check if a newer season league exists
+    detectNewSeason();
   } catch(e) { showError(e.message || String(e)); }
 }
 
@@ -9733,6 +9811,10 @@ function closeRosterModal() {
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // Restore saved league ID (overrides the hardcoded placeholder)
+  const savedLeague = localStorage.getItem('fo_league_id');
+  if (savedLeague) document.getElementById('leagueInput').value = savedLeague;
+
   const saved = localStorage.getItem('fo_tab');
   const validTabs = ['league','teams','players','trade','history'];
   if (saved && validTabs.includes(saved)) currentTab = saved;
